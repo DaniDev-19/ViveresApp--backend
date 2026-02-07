@@ -29,5 +29,5 @@ class UserInDBBase(UserBase):
         from_attributes = True
 
 
-class User(UserInDBBase):
+class UserResponse(UserInDBBase):
     pass

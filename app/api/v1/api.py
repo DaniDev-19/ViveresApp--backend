@@ -1,34 +1,21 @@
 from fastapi import APIRouter
-from app.api.v1.endpoints import (
-    rates,
-    sales,
-    reports,
-    purchases,
-    upload,
-    auth,
-    web_orders,
-    audit,
-    products,
-    providers,
-    notifications,
-    customers,
-    users,
-)
+from app.api.v1 import routes
 
 api_router = APIRouter()
-api_router.include_router(auth.router, tags=["auth"])
-api_router.include_router(users.router, prefix="/users", tags=["users"])
-api_router.include_router(
-    notifications.router, prefix="/notifications", tags=["notifications"]
-)
-api_router.include_router(audit.router, prefix="/audit", tags=["audit"])
-api_router.include_router(rates.router, prefix="/rates", tags=["rates"])
-api_router.include_router(sales.router, prefix="/sales", tags=["sales"])
-api_router.include_router(products.router, prefix="/products", tags=["products"])
-api_router.include_router(providers.router, prefix="/providers", tags=["providers"])
-api_router.include_router(reports.router, prefix="/reports", tags=["reports"])
-api_router.include_router(purchases.router, prefix="/purchases", tags=["purchases"])
-api_router.include_router(web_orders.router, prefix="/web_orders", tags=["web_orders"])
-api_router.include_router(upload.router, prefix="/uploads", tags=["uploads"])
-api_router.include_router(web_orders.router, prefix="/web-orders", tags=["web-orders"])
-api_router.include_router(customers.router, prefix="/customers", tags=["customers"])
+api_router.include_router(routes.auth.router, tags=["auth"])
+api_router.include_router(routes.users.router, prefix="/users", tags=["users"])
+api_router.include_router(routes.notifications.router, prefix="/notifications", tags=["notifications"])
+api_router.include_router(routes.audit_logs.router, prefix="/audit", tags=["audit"])
+api_router.include_router(routes.exchange_rates.router, prefix="/rates", tags=["rates"])
+api_router.include_router(routes.sales.router, prefix="/sales", tags=["sales"])
+api_router.include_router(routes.sale_items.router, prefix="/sale-items", tags=["sale-items"])
+api_router.include_router(routes.payments.router, prefix="/payments", tags=["payments"])
+api_router.include_router(routes.products.router, prefix="/products", tags=["products"])
+api_router.include_router(routes.providers.router, prefix="/providers", tags=["providers"])
+api_router.include_router(routes.reports.router, prefix="/reports", tags=["reports"])
+api_router.include_router(routes.purchase_orders.router, prefix="/purchases", tags=["purchases"])
+api_router.include_router(routes.purchase_items.router, prefix="/purchase-items", tags=["purchase-items"])
+api_router.include_router(routes.web_orders.router, prefix="/web-orders", tags=["web-orders"])
+api_router.include_router(routes.web_order_items.router, prefix="/web-order-items", tags=["web-order-items"])
+api_router.include_router(routes.customers.router, prefix="/customers", tags=["customers"])
+api_router.include_router(routes.upload.router, prefix="/uploads", tags=["uploads"])

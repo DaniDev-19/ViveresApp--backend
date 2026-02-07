@@ -9,6 +9,7 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from typing import List, Dict, Any
 from io import BytesIO
 from datetime import datetime
+from app.core.config import settings
 
 class ReportService:
     def _get_header_style(self):
@@ -36,7 +37,7 @@ class ReportService:
         doc = SimpleDocTemplate(buffer, pagesize=landscape(letter), rightMargin=20, leftMargin=20, topMargin=30, bottomMargin=30)
         elements = []
         
-        elements.append(Paragraph("VÍVERES VALENTINA", self._get_header_style()))
+        elements.append(Paragraph(settings.BUSINESS_NAME.upper(), self._get_header_style()))
         elements.append(Paragraph(f"Reporte de Ventas Detallado", self._get_sub_header_style()))
         elements.append(Paragraph(f"Periodo: {date_range} | Generado: {datetime.now().strftime('%d/%m/%Y %H:%M')}", self._get_sub_header_style()))
 
@@ -124,13 +125,18 @@ class ReportService:
         ws = wb.active
         ws.title = "Reporte de Ventas"
 
+        ws.merge_cells('A1:K1')
+        ws['A1'] = settings.BUSINESS_NAME.upper()
+        ws['A1'].font = Font(bold=True, size=16)
+        ws['A1'].alignment = Alignment(horizontal="center")
+        
         headers = ["ID", "Fecha", "Cliente", "Cajero", "Items", "Delivery", "IVA", "Ganancia", "Total (BS)", "Total (USD)", "Estado"]
         header_font = Font(bold=True, color="FFFFFF", size=12)
         header_fill = PatternFill(start_color="4F46E5", end_color="4F46E5", fill_type="solid")
         border = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
         
         for col_num, header in enumerate(headers, 1):
-            cell = ws.cell(row=1, column=col_num, value=header)
+            cell = ws.cell(row=2, column=col_num, value=header)
             cell.font = header_font
             cell.fill = header_fill
             cell.alignment = Alignment(horizontal="center", vertical="center")
@@ -140,8 +146,8 @@ class ReportService:
         ws.column_dimensions['E'].width = 40 
         ws.column_dimensions['C'].width = 25
 
-        last_row = 2
-        for row_num, sale in enumerate(sales_data, 2):
+        last_row = 3
+        for row_num, sale in enumerate(sales_data, 3):
             try:
                 ws.cell(row=row_num, column=1, value=sale.get("id"))
                 ws.cell(row=row_num, column=2, value=str(sale.get("date")))
@@ -174,9 +180,7 @@ class ReportService:
         
         for col in cols_to_sum:
             cell = ws.cell(row=total_row, column=openpyxl.utils.column_index_from_string(col))
-            # Use formula or manual sum? Manual safer if we have full data loaded, but formula is "live".
-            # Formula: =SUM(F2:F{last_row})
-            cell.value = f"=SUM({col}2:{col}{last_row})"
+            cell.value = f"=SUM({col}3:{col}{last_row})"
             cell.font = Font(bold=True)
             if col == 'I':
                 cell.number_format = '#,##0.00'
@@ -193,7 +197,7 @@ class ReportService:
         doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
         elements = []
         
-        elements.append(Paragraph("VÍVERES VALENTINA", self._get_header_style()))
+        elements.append(Paragraph(settings.BUSINESS_NAME.upper(), self._get_header_style()))
         elements.append(Paragraph(f"Reporte de Inventario General", self._get_sub_header_style()))
         elements.append(Paragraph(f"Generado: {datetime.now().strftime('%d/%m/%Y %H:%M')}", self._get_sub_header_style()))
 
@@ -243,6 +247,11 @@ class ReportService:
         ws = wb.active
         ws.title = "Inventario"
 
+        ws.merge_cells('A1:H1')
+        ws['A1'] = settings.BUSINESS_NAME.upper()
+        ws['A1'].font = Font(bold=True, size=16)
+        ws['A1'].alignment = Alignment(horizontal="center")
+
         # REPLACED Category with Barcode
         headers = ["ID", "Código", "Producto", "Stock", "Costo", "Precio", "Margen", "Valor Total"]
         header_font = Font(bold=True, color="FFFFFF", size=12)
@@ -250,7 +259,7 @@ class ReportService:
         border = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
 
         for col_num, header in enumerate(headers, 1):
-            cell = ws.cell(row=1, column=col_num, value=header)
+            cell = ws.cell(row=2, column=col_num, value=header)
             cell.font = header_font
             cell.fill = header_fill
             cell.alignment = Alignment(horizontal="center", vertical="center")
@@ -259,7 +268,7 @@ class ReportService:
 
         ws.column_dimensions['C'].width = 40 # Name
 
-        for row_num, prod in enumerate(products_data, 2):
+        for row_num, prod in enumerate(products_data, 3):
             val = prod.get("stock", 0) * prod.get("price", 0)
             ws.cell(row=row_num, column=1, value=prod.get("id"))
             ws.cell(row=row_num, column=2, value=prod.get("barcode", "N/A"))
@@ -330,7 +339,7 @@ class ReportService:
             # 3. Footer (Bottom) - Moved closer to bottom
             c.setFont("Helvetica-Oblique", 9)
             c.setFillColor(colors.HexColor('#4F46E5'))
-            c.drawCentredString(x + col_width / 2, y + 15, "VÍVERES VALENTINA")
+            c.drawCentredString(x + col_width / 2, y + 15, settings.BUSINESS_NAME.upper())
 
             x_idx += 1
             if x_idx >= cols:

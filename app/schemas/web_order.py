@@ -1,65 +1,42 @@
-from typing import List, Optional, Any
+from typing import List, Optional
 from pydantic import BaseModel
 from datetime import datetime
+from .web_order_item import WebOrderItemCreate, WebOrderItemResponse
+from .customer import CustomerCreate
 
-
-# --- Customer ---
-class CustomerBase(BaseModel):
-    cedula: str
-    name: str
-    phone: str
-    email: Optional[str] = None
-    address: Optional[str] = None
-
-
-class CustomerCreate(CustomerBase):
-    pass
-
-
-class CustomerResponse(CustomerBase):
-    id: int
-
-    class Config:
-        from_attributes = True
-
-
-# --- Web Order Items ---
-class WebOrderItemCreate(BaseModel):
-    product_id: int
-    quantity: int
-    # Price is fetched from backend for security
-
-
-class WebOrderItemResponse(BaseModel):
-    id: int
-    product_id: int
-    product_name: str
-    quantity: int
-    price_usd: float
-
-    class Config:
-        from_attributes = True
-
-
-# --- Web Order ---
-class WebOrderCreate(BaseModel):
+class WebOrderBase(BaseModel):
     customer: CustomerCreate
-    items: List[WebOrderItemCreate]
-    payment_method: str
-    transaction_ref: Optional[str] = None
+    payment_method: Optional[str] = None
     payment_proof_url: Optional[str] = None
+    transaction_ref: Optional[str] = None
+    delivery_type: Optional[str] = None
+    delivery_cost: float = 0.0
+    total_tax_usd: float = 0.0
+    collect_tax: bool = True
 
+class WebOrderCreate(WebOrderBase):
+    items: List[WebOrderItemCreate]
 
 class WebOrderResponse(BaseModel):
     id: int
-    created_at: datetime
+    customer_id: int
+    customer_data: dict
     status: str
     total_estimated_usd: float
-    customer_data: Any  # JSON
-    payment_method: str
+    payment_method: Optional[str]
     payment_proof_url: Optional[str]
     transaction_ref: Optional[str]
-    items: List[WebOrderItemResponse]
+    delivery_type: Optional[str]
+    delivery_cost: float
+    total_tax_usd: float
+    collect_tax: bool
+    sale_id: Optional[int] = None
+    created_at: datetime
+    items: List[WebOrderItemResponse] = []
 
     class Config:
         from_attributes = True
+
+class WebOrderPagination(BaseModel):
+    items: List[WebOrderResponse]
+    total: int

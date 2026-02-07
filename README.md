@@ -10,11 +10,12 @@ Desarrollado y Arquitectado por: **DaniDev - Software Engineer**
 
 La arquitectura está basada en el concepto de **Async Fast-API Architecture**, priorizando el rendimiento no bloqueante y la integridad de datos.
 
-- **Framework:** [FastAPI](https://fastapi.tiangolo.com/) (Python 3.10+)
+- **Framework:** [FastAPI](https://fastapi.tiangolo.com/) (Python 3.12+)
 - **Base de Datos:** PostgreSQL
 - **ORM:** [SQLAlchemy 2.0](https://www.sqlalchemy.org/) (Async Engine)
 - **Migraciones:** Alembic
 - **Validación de Datos:** Pydantic V2
+- **Almacenamiento:** Cloudflare R2 (S3 API) + Local Storage (Patrón Strategy)
 - **Reportes:** ReportLab (PDF) & OpenPyxl (Excel)
 - **Seguridad:** JWT (JSON Web Tokens) & Passlib (Bcrypt)
 
@@ -77,11 +78,25 @@ La seguridad es el pilar de **Viveres App**. Hemos implementado estándares de n
    pip install -r requirements.txt
    ```
 
-3. **Variables de Entorno:**
-   Crea un archivo `.env` con:
+3. **Variables de Entorno (.env):**
+   Configura tu archivo local basado en los requerimientos del sistema:
    ```env
+   # Core
    DATABASE_URL=postgresql+asyncpg://user:pass@localhost:5432/viveres_db
    SECRET_KEY=tu_super_secreto
+   
+   # Storage (Strategy: local | r2)
+   STORAGE_MODE=r2
+   R2_BUCKET=tu-bucket
+   R2_ACCESS_KEY=xxx
+   R2_SECRET_KEY=xxx
+   R2_ENDPOINT=https://xxx.r2.cloudflarestorage.com
+   R2_PUBLIC_URL=https://pub-xxx.r2.dev
+   
+   # White-Label Config
+   BUSINESS_NAME="Mi Negocio"
+   BUSINESS_PHONE="+584120000000"
+   BUSINESS_ADDRESS="Calle Falsa 123"
    ```
 
 4. **Levantar el Servidor:**

@@ -3,6 +3,7 @@ from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
 from io import BytesIO
+from app.core.config import settings
 
 
 class PDFService:
@@ -18,12 +19,12 @@ class PDFService:
         styles = getSampleStyleSheet()
 
         # Header
-        elements.append(Paragraph("ViveresApp - Factura", styles["Title"]))
+        elements.append(Paragraph(f"{settings.BUSINESS_NAME} - Factura", styles["Title"]))
         elements.append(Spacer(1, 12))
 
         # Metadata
         if include_rif:
-            elements.append(Paragraph("RIF: J-00000000-0", styles["Normal"]))
+            elements.append(Paragraph(f"RIF: {settings.BUSINESS_RIF}", styles["Normal"]))
 
         elements.append(
             Paragraph(f"Fecha: {sale_data.get('created_at', 'N/A')}", styles["Normal"])

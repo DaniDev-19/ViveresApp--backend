@@ -14,8 +14,7 @@ El sistema utiliza un esquema relacional optimizado con las siguientes entidades
 | Tabla | Propósito |
 |---|---|
 | `users` | Gestión de administradores, cajeros y personal de inventario. |
-| `products` | Catálogo maestro de productos con códigos de barra y precios en USD. |
-| `categories` | Organización jerárquica de productos. |
+| `products` | Catálogo maestro de productos con códigos de barra, precios en USD y toggles de IVA web. |
 | `customers` | Registro de clientes (cédula, nombre, contacto) para ventas y pedidos. |
 
 ### Operaciones Financieras

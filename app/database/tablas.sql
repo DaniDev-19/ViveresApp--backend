@@ -4,7 +4,7 @@
 -- Incluye índices de optimización y restricciones
 -- ==============================================================================
 
--- 1. USUARIOS
+-- 2. USUARIOS
 CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
     username VARCHAR(100) UNIQUE NOT NULL,
@@ -16,13 +16,7 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 
--- 2. CATEGORÍAS
-CREATE TABLE IF NOT EXISTS categories (
-    id SERIAL PRIMARY KEY,
-    name VARCHAR(100) UNIQUE NOT NULL,
-    description TEXT
-);
-CREATE INDEX IF NOT EXISTS idx_categories_name ON categories(name);
+
 
 -- 3. PRODUCTOS
 CREATE TABLE IF NOT EXISTS products (
@@ -36,13 +30,13 @@ CREATE TABLE IF NOT EXISTS products (
     price_usd DOUBLE PRECISION NOT NULL,                -- Precio de venta calculado
     stock_quantity INTEGER DEFAULT 0,
     min_stock_level INTEGER DEFAULT 5,                  -- Nivel de stock crítico
-    category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
     image_url TEXT,
-    is_public BOOLEAN DEFAULT TRUE                      -- Visible en el catálogo web
+    is_public BOOLEAN DEFAULT TRUE,                     -- Visible en el catálogo web
+    apply_iva_web BOOLEAN DEFAULT TRUE                  -- Si aplica IVA en pedidos web
 );
 CREATE INDEX IF NOT EXISTS idx_products_barcode ON products(barcode);
 CREATE INDEX IF NOT EXISTS idx_products_name ON products(name);
-CREATE INDEX IF NOT EXISTS idx_products_category ON products(category_id);
+
 
 -- 4. PROVEEDORES
 CREATE TABLE IF NOT EXISTS providers (
@@ -143,12 +137,18 @@ CREATE TABLE IF NOT EXISTS web_orders (
     customer_data JSONB NOT NULL,
     status VARCHAR(50) DEFAULT 'pending_review',
     total_estimated_usd DOUBLE PRECISION NOT NULL,
+    total_tax_usd DOUBLE PRECISION DEFAULT 0.0,
+    collect_tax BOOLEAN DEFAULT TRUE,
     payment_method VARCHAR(100),
     payment_proof_url TEXT,                               -- URL de comprobante (S3/R2)
-    transaction_ref VARCHAR(255)
+    transaction_ref VARCHAR(255),
+    delivery_type VARCHAR(100),
+    delivery_cost DOUBLE PRECISION DEFAULT 0.0,
+    sale_id INTEGER REFERENCES sales(id) ON DELETE SET NULL
 );
 CREATE INDEX IF NOT EXISTS idx_web_orders_status ON web_orders(status);
 CREATE INDEX IF NOT EXISTS idx_web_orders_customer ON web_orders(customer_id);
+CREATE INDEX IF NOT EXISTS idx_web_orders_sale ON web_orders(sale_id);
 
 -- 12. ÍTEMS DE PEDIDO WEB
 CREATE TABLE IF NOT EXISTS web_order_items (
@@ -193,17 +193,6 @@ CREATE TABLE IF NOT EXISTS exchange_rates (
 );
 CREATE INDEX IF NOT EXISTS idx_exchange_rates_currency ON exchange_rates(currency);
 
--- 16. AJUSTES DE INVENTARIO
-CREATE TABLE IF NOT EXISTS inventory_adjustments (
-    id SERIAL PRIMARY KEY,
-    product_id INTEGER REFERENCES products(id) ON DELETE CASCADE,
-    user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
-    quantity_change INTEGER NOT NULL,
-    reason VARCHAR(255),                                  -- 'robo', 'daño', 'correccion', 'devolucion'
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
-CREATE INDEX IF NOT EXISTS idx_inv_adj_product ON inventory_adjustments(product_id);
-
 -- ==============================================================================
 -- DISPARADORES Y FUNCIONES (TRADUCIDOS)
 -- ==============================================================================
@@ -221,3 +210,12 @@ DROP TRIGGER IF EXISTS trg_actualizar_precio ON products;
 CREATE TRIGGER trg_actualizar_precio
 BEFORE INSERT OR UPDATE OF cost_price, profit_margin ON products
 FOR EACH ROW EXECUTE FUNCTION actualizar_precio_producto();
+
+-- 16. CONFIGURACIONES GLOBALES
+CREATE TABLE IF NOT EXISTS settings (
+    key VARCHAR(100) PRIMARY KEY,
+    value JSONB NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT INTO settings (key, value) VALUES ('web_shop_include_tax', 'true') ON CONFLICT DO NOTHING;

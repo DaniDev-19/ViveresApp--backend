@@ -1,6 +1,6 @@
 import httpx
 from datetime import datetime
-from app.models.rate import ExchangeRate
+from app.models.exchange_rate import ExchangeRate
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -10,22 +10,22 @@ class CurrencyService:
         """Obtiene la tasa BCV desde DolarApi.com"""
         try:
             async with httpx.AsyncClient() as client:
+                # El endpoint oficial es el que reporta el BCV
                 response = await client.get(
                     "https://ve.dolarapi.com/v1/dolares/oficial",
                     timeout=10.0
                 )
                 data = response.json()
-                # El BCV oficial usa 4+ decimales
-                return round(float(data.get("promedio", 0)), 4)
+                return round(float(data.get("promedio", 0)), 2)
         except Exception as e:
             print(f"Error fetching BCV: {e}")
             return 0.0
 
     async def fetch_usdt(self) -> float:
-        """Obtiene la tasa USDT (Binance P2P)"""
-        # Intentamos usar Monitor Dolar como fuente más precisa de USDT/Paralelo
+        """Obtiene la tasa Paralelo desde DolarApi.com"""
         try:
             async with httpx.AsyncClient() as client:
+                # El endpoint paralelo es el promedio del mercado no oficial
                 response = await client.get(
                     "https://ve.dolarapi.com/v1/dolares/paralelo",
                     timeout=10.0
@@ -33,7 +33,7 @@ class CurrencyService:
                 data = response.json()
                 return round(float(data.get("promedio", 0)), 2)
         except Exception as e:
-            print(f"Error fetching USDT: {e}")
+            print(f"Error fetching Paralelo: {e}")
             return 0.0
 
     async def fetch_cop(self) -> float:

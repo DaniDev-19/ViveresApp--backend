@@ -11,9 +11,9 @@ class ProductBase(BaseModel):
     tax_rate: Optional[float] = 0.16
     stock_quantity: int = 0
     min_stock_level: int = 5
-    category_id: Optional[int] = None
     image_url: Optional[str] = None
     is_public: bool = True
+    apply_iva_web: bool = True
 
 
 class ProductCreate(ProductBase):
@@ -29,9 +29,9 @@ class ProductUpdate(BaseModel):
     tax_rate: Optional[float] = None
     stock_quantity: Optional[int] = None
     min_stock_level: Optional[int] = None
-    category_id: Optional[int] = None
     image_url: Optional[str] = None
     is_public: Optional[bool] = None
+    apply_iva_web: Optional[bool] = None
 
 
 class ProductResponse(ProductBase):
