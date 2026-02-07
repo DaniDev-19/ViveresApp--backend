@@ -9,6 +9,9 @@ from app.core import exceptions
 
 from app.api.v1.api import api_router
 
+# Detectar si estamos en un entorno cloud (Vercel, Render, etc.)
+IS_CLOUD = os.environ.get("VERCEL", False) or os.environ.get("RENDER", False)
+
 app = FastAPI(
     title=settings.PROJECT_NAME, openapi_url=f"{settings.API_V1_STR}/openapi.json"
 )
@@ -30,9 +33,10 @@ app.add_exception_handler(
     RequestValidationError, exceptions.validation_exception_handler
 )
 
-# Crear directorio estático si no existe
-os.makedirs("static/uploads", exist_ok=True)
-app.mount("/static", StaticFiles(directory="static"), name="static")
+# Solo montar archivos estáticos en entorno local (no en cloud)
+if not IS_CLOUD:
+    os.makedirs("static/uploads", exist_ok=True)
+    app.mount("/static", StaticFiles(directory="static"), name="static")
 
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
