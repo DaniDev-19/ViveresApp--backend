@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import List, Optional
 from datetime import datetime
 from .sale_item import SaleItemCreate, SaleItemResponse
@@ -7,7 +7,16 @@ from .payment import PaymentCreate, PaymentResponse
 class SaleBase(BaseModel):
     has_delivery: bool = False
     delivery_amount_usd: float = 0.0
-    customer_id: Optional[int] = None
+    customer_id: int
+    
+    @field_validator('customer_id')
+    @classmethod
+    def validate_customer_id(cls, v):
+        if v == 0:
+            raise ValueError('Debe seleccionar un cliente para realizar la venta')
+        if v < 0:
+            raise ValueError('El ID del cliente debe ser un número positivo')
+        return v
 
 class SaleCreate(SaleBase):
     items: List[SaleItemCreate]

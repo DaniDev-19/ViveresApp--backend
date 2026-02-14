@@ -36,6 +36,10 @@ class SaleController:
 
     @staticmethod
     async def create(db: AsyncSession, sale_in: SaleCreate, user_id: int):
+        # Validar que se haya seleccionado un cliente
+        if not sale_in.customer_id:
+            raise ValueError("Debe seleccionar un cliente para crear la venta")
+        
         subtotal_usd = 0.0
         total_tax_usd = 0.0
         db_items = []
