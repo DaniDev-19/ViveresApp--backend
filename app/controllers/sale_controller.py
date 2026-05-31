@@ -32,6 +32,7 @@ class SaleController:
             for item in sale.items:
                 if item.product:
                     item.name = item.product.name
+                    item.barcode = item.product.barcode if item.product else None
         return sales
 
     @staticmethod
@@ -107,6 +108,7 @@ class SaleController:
             for item in sale.items:
                 if item.product:
                     item.name = item.product.name
+                    item.barcode = item.product.barcode if item.product else None
         return sale
     @staticmethod
     async def get_stats(db: AsyncSession):

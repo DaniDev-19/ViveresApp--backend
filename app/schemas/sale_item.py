@@ -14,6 +14,7 @@ class SaleItemResponse(BaseModel):
     quantity: int
     unit_price_usd: float
     name: Optional[str] = None
+    barcode: Optional[str] = None
 
     class Config:
         from_attributes = True
