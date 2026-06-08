@@ -50,3 +50,22 @@ class PurchaseController:
         await db.commit()
         await db.refresh(order)
         return order
+
+    @staticmethod
+    async def delete(db: AsyncSession, order_id: int):
+        query = (
+            select(PurchaseOrder)
+            .where(PurchaseOrder.id == order_id)
+            .options(selectinload(PurchaseOrder.items))
+        )
+        result = await db.execute(query)
+        order = result.scalars().first()
+        if not order:
+            return None
+        if order.status == "completed":
+            return False
+        for item in order.items:
+            await db.delete(item)
+        await db.delete(order)
+        await db.commit()
+        return order

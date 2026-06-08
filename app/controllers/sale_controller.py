@@ -9,7 +9,7 @@ from app.schemas.sale import SaleCreate
 
 class SaleController:
     @staticmethod
-    async def get_multi(db: AsyncSession, skip: int = 0, limit: int = 100, search: str = None):
+    async def get_multi(db: AsyncSession, skip: int = 0, limit: int = 100, search: str = None, only_today: bool = False):
         from sqlalchemy.orm import selectinload
         
         stmt = select(Sale).options(
@@ -20,6 +20,10 @@ class SaleController:
 
         if search:
             stmt = stmt.where(cast(Sale.id, String).like(f"%{search}%"))
+        
+        if only_today:
+            start_day = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+            stmt = stmt.where(Sale.created_at >= start_day)
         
         result = await db.execute(stmt.offset(skip).limit(limit))
         sales = result.scalars().all()
@@ -86,6 +90,16 @@ class SaleController:
 
         await db.commit()
         await db.refresh(db_sale, ["items", "payments", "customer"])
+
+        from app.services.audit_service import AuditService
+        await AuditService.log_action(
+            db,
+            user_id,
+            "CREATE",
+            "sales",
+            f"Creada venta #{db_sale.id} por ${total_usd:.2f}",
+        )
+
         return db_sale
 
     @staticmethod

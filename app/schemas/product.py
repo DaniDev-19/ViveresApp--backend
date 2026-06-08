@@ -1,5 +1,6 @@
 from typing import Optional
 from pydantic import BaseModel
+from app.schemas.category import CategoryResponse
 
 
 class ProductBase(BaseModel):
@@ -11,6 +12,8 @@ class ProductBase(BaseModel):
     tax_rate: Optional[float] = 0.16
     stock_quantity: int = 0
     min_stock_level: int = 5
+    category_id: Optional[int] = None
+    offer_price_usd: Optional[float] = None
     image_url: Optional[str] = None
     is_public: bool = True
     apply_iva_web: bool = True
@@ -29,6 +32,8 @@ class ProductUpdate(BaseModel):
     tax_rate: Optional[float] = None
     stock_quantity: Optional[int] = None
     min_stock_level: Optional[int] = None
+    category_id: Optional[int] = None
+    offer_price_usd: Optional[float] = None
     image_url: Optional[str] = None
     is_public: Optional[bool] = None
     apply_iva_web: Optional[bool] = None
@@ -36,7 +41,8 @@ class ProductUpdate(BaseModel):
 
 class ProductResponse(ProductBase):
     id: int
-    price_usd: float  # Calculated field
+    price_usd: float
+    category: Optional[CategoryResponse] = None
 
     class Config:
         from_attributes = True

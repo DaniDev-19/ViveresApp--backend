@@ -27,6 +27,16 @@ class Settings(BaseSettings):
     BUSINESS_ADDRESS: str = "Dirección del Negocio"
     BUSINESS_EMAIL: str = "contacto@ejemplo.com"
 
+    # Payment QR Information
+    PAGO_MOVIL_BANCO: str = "0102"
+    PAGO_MOVIL_TELEFONO: str = "+58 000 0000000"
+    PAGO_MOVIL_RIF_CI: str = "V-00000000"
+    PAGO_MOVIL_NOMBRE: str = "Víveres Valentina"
+    PAYPAL_CORREO: str = "contacto@ejemplo.com"
+    BINANCE_PAY_ID: str = "000000000"
+    ZINLI_CORREO: str = "contacto@ejemplo.com"
+    AIRTM_CORREO: str = "contacto@ejemplo.com"
+
     # Storage Settings
     STORAGE_MODE: str = "local"  # "local" or "r2"
     R2_BUCKET: Optional[str] = None

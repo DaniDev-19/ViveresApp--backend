@@ -1,3 +1,4 @@
+from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.models.provider import Provider
@@ -5,8 +6,11 @@ from app.schemas.provider import ProviderCreate
 
 class ProviderController:
     @staticmethod
-    async def get_multi(db: AsyncSession, skip: int = 0, limit: int = 100):
-        query = select(Provider).offset(skip).limit(limit)
+    async def get_multi(db: AsyncSession, skip: int = 0, limit: int = 100, is_delivery: Optional[bool] = None):
+        query = select(Provider)
+        if is_delivery is not None:
+            query = query.where(Provider.is_delivery == is_delivery)
+        query = query.offset(skip).limit(limit)
         result = await db.execute(query)
         return result.scalars().all()
 

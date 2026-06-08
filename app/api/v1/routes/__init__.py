@@ -2,6 +2,7 @@ from . import (
     auth,
     users,
     products,
+    categories,
     sales,
     sale_items,
     payments,
@@ -17,4 +18,5 @@ from . import (
     reports,
     upload,
     settings,
+    deliveries,
 )

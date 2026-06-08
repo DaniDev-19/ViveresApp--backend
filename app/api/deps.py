@@ -48,3 +48,19 @@ def get_current_active_user(
     if not current_user.is_active:
         raise HTTPException(status_code=400, detail="Usuario inactivo")
     return current_user
+
+
+def verify_roles(allowed_roles: list):
+    async def dependency(
+        current_user: User = Depends(get_current_active_user),
+    ) -> User:
+        allowed_str_roles = [r.value if hasattr(r, "value") else str(r) for r in allowed_roles]
+        user_role_str = current_user.role.value if hasattr(current_user.role, "value") else str(current_user.role)
+        if user_role_str not in allowed_str_roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No tiene permisos para realizar esta acción",
+            )
+        return current_user
+    return dependency
+

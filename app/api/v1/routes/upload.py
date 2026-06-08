@@ -1,11 +1,16 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException, status
+from fastapi import APIRouter, UploadFile, File, HTTPException, status, Depends
 from app.services.image_service import image_service
+from app.api import deps
+from app.models.user import User, UserRole
 
 router = APIRouter()
 
 
 @router.post("/image", status_code=status.HTTP_201_CREATED)
-async def upload_image(file: UploadFile = File(...)):
+async def upload_image(
+    file: UploadFile = File(...),
+    current_user: User = Depends(deps.verify_roles([UserRole.ADMIN, UserRole.INVENTORY_MANAGER])),
+):
     """
     Sube y optimiza una imagen a formato WebP.
     Retorna la URL relativa para ser guardada en la BD.
@@ -25,3 +30,4 @@ async def upload_image(file: UploadFile = File(...)):
         )
 
     return {"url": url}
+

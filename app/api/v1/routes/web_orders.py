@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api import deps
 from app.controllers.web_order_controller import WebOrderController
 from app.schemas.web_order import WebOrderCreate, WebOrderResponse, WebOrderPagination
-from app.models.user import User
+from app.models.user import User, UserRole
 
 router = APIRouter()
 
@@ -22,7 +22,7 @@ async def get_web_orders(
     skip: int = 0,
     limit: int = 100,
     status_filter: Optional[str] = None,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.verify_roles([UserRole.ADMIN, UserRole.WORKER, UserRole.INVENTORY_MANAGER, UserRole.DELIVERY])),
 ):
     return await WebOrderController.get_multi(db, skip=skip, limit=limit, status_filter=status_filter)
 
@@ -32,9 +32,10 @@ async def update_order_status(
     db: AsyncSession = Depends(deps.get_db),
     order_id: int,
     status: str,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.verify_roles([UserRole.ADMIN, UserRole.WORKER, UserRole.INVENTORY_MANAGER, UserRole.DELIVERY])),
 ):
     order = await WebOrderController.update_status(db, order_id=order_id, status=status, user_id=current_user.id)
     if not order:
         raise HTTPException(status_code=404, detail="Pedido no encontrado")
     return order
+

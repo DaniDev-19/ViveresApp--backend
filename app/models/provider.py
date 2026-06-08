@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String
+from sqlalchemy import Column, Integer, String, Boolean
 from sqlalchemy.orm import relationship
 from app.db.base_class import Base
 
@@ -9,5 +9,6 @@ class Provider(Base):
     name = Column(String, index=True, nullable=False)
     rif = Column(String, unique=True, index=True, nullable=True)
     contact_info = Column(String, nullable=True)
+    is_delivery = Column(Boolean, default=False, nullable=False)
 
     orders = relationship("PurchaseOrder", back_populates="provider")

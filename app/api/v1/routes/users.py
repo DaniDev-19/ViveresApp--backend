@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api import deps
 from app.controllers.user_controller import UserController
 from app.schemas.user import UserResponse, UserCreate, UserUpdate
+from app.models.user import UserRole
 
 router = APIRouter()
 
@@ -13,7 +14,7 @@ async def get_users(
     skip: int = 0,
     limit: int = 100,
     search: Optional[str] = None,
-    current_user: UserResponse = Depends(deps.get_current_active_user),
+    current_user: UserResponse = Depends(deps.verify_roles([UserRole.ADMIN])),
 ):
     return await UserController.get_multi(db, skip=skip, limit=limit, search=search)
 
@@ -22,7 +23,7 @@ async def create_user(
     *,
     db: AsyncSession = Depends(deps.get_db),
     user_in: UserCreate,
-    current_user: UserResponse = Depends(deps.get_current_active_user),
+    current_user: UserResponse = Depends(deps.verify_roles([UserRole.ADMIN])),
 ):
     return await UserController.create(db, user_in=user_in)
 
@@ -32,7 +33,7 @@ async def update_user(
     db: AsyncSession = Depends(deps.get_db),
     user_id: int,
     user_in: UserUpdate,
-    current_user: UserResponse = Depends(deps.get_current_active_user),
+    current_user: UserResponse = Depends(deps.verify_roles([UserRole.ADMIN])),
 ):
     user = await UserController.update(db, user_id=user_id, user_in=user_in)
     if not user:
@@ -44,9 +45,10 @@ async def delete_user(
     *,
     db: AsyncSession = Depends(deps.get_db),
     user_id: int,
-    current_user: UserResponse = Depends(deps.get_current_active_user),
+    current_user: UserResponse = Depends(deps.verify_roles([UserRole.ADMIN])),
 ):
     user = await UserController.delete(db, user_id=user_id)
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
     return user
+
