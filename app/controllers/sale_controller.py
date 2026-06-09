@@ -45,6 +45,9 @@ class SaleController:
         if not sale_in.customer_id:
             raise ValueError("Debe seleccionar un cliente para crear la venta")
         
+        # 🌟 VALIDACIÓN: Detectar si es una venta pagada con dólares en efectivo
+        is_efectivo_usd = any(p.method == "Efectivo_USD" for p in sale_in.payments)
+        
         subtotal_usd = 0.0
         total_tax_usd = 0.0
         db_items = []
@@ -57,13 +60,17 @@ class SaleController:
             product.stock_quantity -= item.quantity
             price = item.matched_price if item.matched_price else product.price_usd
             item_subtotal = price * item.quantity
-            item_tax = item_subtotal * product.tax_rate
+            
+            # 🌟 CONDICIONAL DEL IVA: Si paga en efectivo USD, el impuesto se anula (0.0)
+            item_tax = 0.0 if is_efectivo_usd else (item_subtotal * product.tax_rate)
             
             subtotal_usd += item_subtotal
             total_tax_usd += item_tax
+            
             db_items.append(SaleItem(
                 product_id=product.id, quantity=item.quantity, 
-                unit_price_usd=price, tax_rate=product.tax_rate, 
+                unit_price_usd=price, 
+                tax_rate=0.0 if is_efectivo_usd else product.tax_rate, 
                 applied_margin=product.profit_margin
             ))
 
@@ -124,6 +131,7 @@ class SaleController:
                     item.name = item.product.name
                     item.barcode = item.product.barcode if item.product else None
         return sale
+
     @staticmethod
     async def get_stats(db: AsyncSession):
         now = datetime.now()

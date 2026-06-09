@@ -402,6 +402,10 @@ class ReportService:
                 if y_idx >= rows:
                     c.showPage()
                     y_idx = 0
+                    
+        c.save()
+        buffer.seek(0)
+        return buffer
         
     def generate_monthly_growth_pdf(self, monthly_data: List[Dict[str, Any]], year: int) -> BytesIO:
         buffer = BytesIO()
