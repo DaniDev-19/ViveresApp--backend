@@ -1,6 +1,6 @@
 from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, or_
+from sqlalchemy import select, or_, and_  # <--- Importamos and_ para la intersección de palabras
 from sqlalchemy.orm import selectinload
 from app.models.product import Product
 from app.schemas.product import ProductCreate, ProductUpdate
@@ -19,20 +19,35 @@ class ProductController:
         in_stock_only: bool = False,
     ):
         query = select(Product).options(selectinload(Product.category))
+        
         if search:
             term = search.strip()
+            
+            # Si es puramente un código numérico largo (ej. código de barras)
             if term.isdigit() and len(term) >= 4:
                 search_filter = or_(
                     Product.barcode == term,
                     Product.barcode.ilike(f"%{term}%"),
                     Product.name.ilike(f"%{term}%"),
                 )
+                query = query.where(search_filter)
             else:
-                search_filter = or_(
-                    Product.name.ilike(f"%{term}%"),
-                    Product.barcode.ilike(f"%{term}%"),
-                )
-            query = query.where(search_filter)
+                # TRUCO MULTI-PALABRA: Dividimos por espacios ("muñon yaris" -> ["muñon", "yaris"])
+                words = [w for w in term.split() if len(w) > 0]
+                
+                if words:
+                    word_filters = []
+                    for word in words:
+                        # Para cada palabra individual, exigimos que combine con el nombre o código de barras
+                        word_filters.append(
+                            or_(
+                                Product.name.ilike(f"%{word}%"),
+                                Product.barcode.ilike(f"%{word}%")
+                            )
+                        )
+                    # Forzamos con AND a que todas las palabras de la lista sumen condiciones obligatorias
+                    query = query.where(and_(*word_filters))
+
         if public_only:
             query = query.where(Product.is_public == True)
         if category_id is not None:

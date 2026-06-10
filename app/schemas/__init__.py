@@ -13,3 +13,5 @@ from .exchange_rate import ExchangeRateResponse
 from .report import LabelRequest
 from .web_order import WebOrderCreate, WebOrderResponse
 from .web_order_item import WebOrderItemCreate, WebOrderItemResponse
+from .sale_return import ReturnCreate, ReturnResponse, ReturnItemResponse
+from .sale_exchange import ExchangeCreate, ExchangeResponse, ExchangeItemResponse

@@ -145,9 +145,124 @@ async def export_sales_report(
         return Response(content=f"Error fatal: {str(e)}", status_code=500)
 
 
+@router.get("/returns-exchanges/export")
+async def export_returns_exchanges_report(
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    format: str = Query("pdf", enum=["pdf", "excel"]),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(deps.verify_roles([UserRole.ADMIN])),
+):
+    """
+    Export a combined report of returns and exchanges with financial impact summary.
+    """
+    from app.models.sale_return import SaleReturn, SaleReturnItem
+    from app.models.sale_exchange import SaleExchange, SaleExchangeItemOut, SaleExchangeItemIn
+
+    try:
+        # 1. Query Returns
+        returns_query = (
+            select(SaleReturn)
+            .options(
+                selectinload(SaleReturn.items).selectinload(SaleReturnItem.product),
+                selectinload(SaleReturn.sale)
+            )
+            .order_by(SaleReturn.created_at.desc())
+        )
+        if start_date:
+            returns_query = returns_query.where(func.date(SaleReturn.created_at) >= start_date)
+        if end_date:
+            returns_query = returns_query.where(func.date(SaleReturn.created_at) <= end_date)
+
+        result_returns = await db.execute(returns_query)
+        returns = result_returns.scalars().all()
+
+        # 2. Query Exchanges
+        exchanges_query = (
+            select(SaleExchange)
+            .options(
+                selectinload(SaleExchange.items_out).selectinload(SaleExchangeItemOut.product),
+                selectinload(SaleExchange.items_in).selectinload(SaleExchangeItemIn.product),
+                selectinload(SaleExchange.sale)
+            )
+            .order_by(SaleExchange.created_at.desc())
+        )
+        if start_date:
+            exchanges_query = exchanges_query.where(func.date(SaleExchange.created_at) >= start_date)
+        if end_date:
+            exchanges_query = exchanges_query.where(func.date(SaleExchange.created_at) <= end_date)
+
+        result_exchanges = await db.execute(exchanges_query)
+        exchanges = result_exchanges.scalars().all()
+
+        # 3. Transform data
+        returns_data = []
+        total_refund = 0.0
+        for r in returns:
+            method_display = {"cash": "Efectivo", "credit_note": "Nota de Crédito", "original": "Método Original"}.get(r.refund_method, r.refund_method)
+            items_str = ", ".join([f"{item.product_name} (x{item.quantity})" for item in r.items]) if r.items else "N/A"
+            total_refund += r.total_refund_usd or 0
+            returns_data.append({
+                "id": r.id,
+                "sale_id": r.sale_id,
+                "date": r.created_at.strftime("%Y-%m-%d %H:%M") if r.created_at else "N/A",
+                "items": items_str,
+                "method": method_display,
+                "credit_note": r.credit_note_code or "-",
+                "reason": (r.reason or "-")[:40],
+                "total": r.total_refund_usd or 0,
+            })
+
+        exchanges_data = []
+        total_exchange_diff = 0.0
+        for ex in exchanges:
+            items_out_str = ", ".join([f"{item.product_name} (x{item.quantity})" for item in ex.items_out]) if ex.items_out else "N/A"
+            items_in_str = ", ".join([f"{item.product_name} (x{item.quantity})" for item in ex.items_in]) if ex.items_in else "N/A"
+            total_exchange_diff += ex.total_difference_usd or 0
+            exchanges_data.append({
+                "id": ex.id,
+                "sale_id": ex.sale_id,
+                "date": ex.created_at.strftime("%Y-%m-%d %H:%M") if ex.created_at else "N/A",
+                "items_out": items_out_str,
+                "items_in": items_in_str,
+                "difference": ex.total_difference_usd or 0,
+                "reason": (ex.reason or "-")[:40],
+            })
+
+        date_range_str = f"{start_date or 'Inicio'} - {end_date or 'Hoy'}"
+
+        summary = {
+            "total_returns": len(returns_data),
+            "total_refund_usd": total_refund,
+            "total_exchanges": len(exchanges_data),
+            "total_exchange_diff_usd": total_exchange_diff,
+        }
+
+        if format == "excel":
+            buffer = report_service.generate_returns_exchanges_excel(returns_data, exchanges_data, summary)
+            filename = f"Reporte_Devoluciones_Cambios_{date.today()}.xlsx"
+            return Response(
+                content=buffer.getvalue(),
+                media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                headers={"Content-Disposition": f"attachment; filename={filename}"}
+            )
+
+        buffer = report_service.generate_returns_exchanges_pdf(returns_data, exchanges_data, summary, date_range_str)
+
+        filename = f"Reporte_Devoluciones_Cambios_{date.today()}.pdf"
+        return Response(
+            content=buffer.getvalue(),
+            media_type="application/pdf",
+            headers={"Content-Disposition": f"inline; filename={filename}"}
+        )
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return Response(content=f"Error fatal: {str(e)}", status_code=500)
+
 @router.get("/inventory/export")
 async def export_inventory_report(
-    filter: str = Query("all", enum=["all", "low_stock"]),
+    filter: str = Query("all", enum=["all", "low_stock", "zero_stock"]),
     format: str = Query("pdf", enum=["pdf", "excel"]),
     type: str = Query("standard", enum=["standard", "code_name", "prices"]),
     db: AsyncSession = Depends(get_db),
@@ -161,6 +276,8 @@ async def export_inventory_report(
     query = select(Product)
     if filter == "low_stock":
         query = query.where(Product.stock_quantity <= Product.min_stock_level)
+    elif filter == "zero_stock":         
+        query = query.where(Product.stock_quantity == 0)
     
     result = await db.execute(query)
     products = result.scalars().all()
@@ -582,8 +699,8 @@ async def get_dashboard_stats(
     res_stock = await db.execute(query_stock)
     low_stock_count = res_stock.scalar()
 
-    # 3. Recent Sales (Last 5 transactions)
-    query_recent = select(Sale).order_by(Sale.created_at.desc()).limit(5)
+    # 3. Recent Sales (Last 5 completed transactions only)
+    query_recent = select(Sale).where(Sale.status == "completed").order_by(Sale.created_at.desc()).limit(5)
     res_recent = await db.execute(query_recent)
     recent_sales = res_recent.scalars().all()
 
@@ -593,12 +710,26 @@ async def get_dashboard_stats(
     res_customers = await db.execute(query_customers)
     total_customers = res_customers.scalar()
 
+    # 5. Returns & Exchanges Count
+    from app.models.sale_return import SaleReturn
+    from app.models.sale_exchange import SaleExchange
+
+    query_returns = select(func.count(SaleReturn.id))
+    res_returns = await db.execute(query_returns)
+    total_returns = res_returns.scalar()
+
+    query_exchanges = select(func.count(SaleExchange.id))
+    res_exchanges = await db.execute(query_exchanges)
+    total_exchanges = res_exchanges.scalar()
+
     return {
         "sales_count_today": count_sales or 0,
         "revenue_today": total_revenue or 0.0,
         "low_stock_count": low_stock_count or 0,
         "recent_sales": recent_sales,
         "total_customers": total_customers or 0,
+        "total_returns": total_returns or 0,
+        "total_exchanges": total_exchanges or 0,
     }
 
 
@@ -1105,6 +1236,7 @@ async def get_providers_performance(
 @router.get("/cash-close")
 async def export_cash_close_report(
     date_str: Optional[str] = Query(None, description="Fecha en formato YYYY-MM-DD"),
+    format: str = Query("pdf", enum=["pdf", "excel"]),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(deps.verify_roles([UserRole.ADMIN])),
 ):
@@ -1207,7 +1339,17 @@ async def export_cash_close_report(
         "payment_breakdown": [val for val in payment_methods_info.values() if val["count"] > 0 or val["amount"] > 0]
     }
 
-    pdf_buffer = report_service.generate_cash_close_pdf(cash_data, target_date.strftime("%d/%m/%Y"))
+    date_label = target_date.strftime("%d/%m/%Y")
+
+    if format == "excel":
+        excel_buffer = report_service.generate_cash_close_excel(cash_data, date_label)
+        return Response(
+            content=excel_buffer.getvalue(),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename=cierre_caja_{target_date.strftime('%Y%m%d')}.xlsx"},
+        )
+
+    pdf_buffer = report_service.generate_cash_close_pdf(cash_data, date_label)
 
     return Response(
         content=pdf_buffer.getvalue(),
@@ -1371,3 +1513,114 @@ async def export_deliveries_report(
         media_type="application/pdf",
         headers={"Content-Disposition": "inline; filename=reporte_entregas.pdf"},
     )
+
+
+@router.get("/profitability/export")
+async def export_profitability_report(
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    format: str = Query("pdf", enum=["pdf", "excel"]),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(deps.verify_roles([UserRole.ADMIN])),
+):
+    """
+    Export product profitability and sales performance report.
+    """
+    try:
+        query = (
+            select(
+                SaleItem.product_id,
+                Product.name,
+                Product.barcode,
+                Product.cost_price,
+                func.sum(SaleItem.quantity).label("quantity"),
+                func.sum(SaleItem.price_usd * SaleItem.quantity).label("revenue")
+            )
+            .join(Sale, SaleItem.sale_id == Sale.id)
+            .join(Product, SaleItem.product_id == Product.id)
+            .where(Sale.status == "completed")
+        )
+
+        if start_date:
+            query = query.where(func.date(Sale.created_at) >= start_date)
+        if end_date:
+            query = query.where(func.date(Sale.created_at) <= end_date)
+
+        query = query.group_by(
+            SaleItem.product_id,
+            Product.name,
+            Product.barcode,
+            Product.cost_price
+        )
+
+        res = await db.execute(query)
+        rows = res.all()
+
+        products_data = []
+        total_qty = 0
+        total_revenue = 0.0
+        total_cost = 0.0
+        total_profit = 0.0
+
+        for row in rows:
+            qty = float(row.quantity or 0)
+            revenue = float(row.revenue or 0.0)
+            cost_unit = float(row.cost_price or 0.0)
+            
+            prod_cost_total = cost_unit * qty
+            profit = revenue - prod_cost_total
+            margin = (profit / revenue * 100.0) if revenue > 0 else 0.0
+            price_unit = revenue / qty if qty > 0 else 0.0
+
+            products_data.append({
+                "product_id": row.product_id,
+                "name": row.name,
+                "barcode": row.barcode or "N/A",
+                "quantity": qty,
+                "cost": cost_unit,
+                "price": price_unit,
+                "revenue": revenue,
+                "profit": profit,
+                "margin": margin
+            })
+
+            total_qty += qty
+            total_revenue += revenue
+            total_cost += prod_cost_total
+            total_profit += profit
+
+        products_data.sort(key=lambda x: x["profit"], reverse=True)
+
+        avg_margin = (total_profit / total_revenue * 100.0) if total_revenue > 0 else 0.0
+
+        summary = {
+            "total_qty": total_qty,
+            "total_revenue": total_revenue,
+            "total_cost": total_cost,
+            "total_profit": total_profit,
+            "avg_margin": avg_margin
+        }
+
+        date_range_str = f"{start_date or 'Inicio'} - {end_date or 'Hoy'}"
+
+        if format == "excel":
+            buffer = report_service.generate_profitability_excel(products_data, summary)
+            filename = f"Reporte_Rentabilidad_{date.today()}.xlsx"
+            return Response(
+                content=buffer.getvalue(),
+                media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                headers={"Content-Disposition": f"attachment; filename={filename}"}
+            )
+
+        buffer = report_service.generate_profitability_pdf(products_data, summary, date_range_str)
+        filename = f"Reporte_Rentabilidad_{date.today()}.pdf"
+        return Response(
+            content=buffer.getvalue(),
+            media_type="application/pdf",
+            headers={"Content-Disposition": f"inline; filename={filename}"}
+        )
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return Response(content=f"Error fatal: {str(e)}", status_code=500)

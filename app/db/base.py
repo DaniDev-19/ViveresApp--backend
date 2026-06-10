@@ -16,3 +16,5 @@ from app.models.web_order_item import WebOrderItem  # noqa
 from app.models.customer import Customer  # noqa
 from app.models.notification import Notification  # noqa
 from app.models.delivery import Delivery  # noqa
+from app.models.sale_return import SaleReturn, SaleReturnItem  # noqa
+from app.models.sale_exchange import SaleExchange, SaleExchangeItemOut, SaleExchangeItemIn  # noqa

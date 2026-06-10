@@ -1,6 +1,7 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc, cast, String, func
 from datetime import datetime, timedelta
+from typing import Optional
 from app.models.sale import Sale
 from app.models.sale_item import SaleItem
 from app.models.payment import Payment
@@ -9,7 +10,14 @@ from app.schemas.sale import SaleCreate
 
 class SaleController:
     @staticmethod
-    async def get_multi(db: AsyncSession, skip: int = 0, limit: int = 100, search: str = None, only_today: bool = False):
+    async def get_multi(
+        db: AsyncSession, 
+        skip: int = 0, 
+        limit: int = 100, 
+        search: str = None, 
+        only_today: bool = False,
+        date_filter: Optional[str] = None  # <-- NUEVO: Parámetro opcional para recibir "YYYY-MM-DD"
+    ):
         from sqlalchemy.orm import selectinload
         
         stmt = select(Sale).options(
@@ -18,16 +26,33 @@ class SaleController:
             selectinload(Sale.customer)
         ).order_by(desc(Sale.created_at))
 
+        # 1. Filtro por ID de venta o texto (Buscador tradicional)
         if search:
             stmt = stmt.where(cast(Sale.id, String).like(f"%{search}%"))
         
-        if only_today:
+        # 2. Filtro dinámico por fecha específica (Ej: "2026-06-09")
+        if date_filter:
+            try:
+                # Convertimos el string plano de HTML a un objeto datetime (00:00:00 del día)
+                start_date = datetime.strptime(date_filter, "%Y-%m-%d").replace(hour=0, minute=0, second=0, microsecond=0)
+                # Calculamos el final del día exacto (23:59:59.999999) sumando 24 horas menos 1 microsegundo
+                end_date = start_date + timedelta(days=1) - timedelta(microseconds=1)
+                
+                # Filtramos las ventas que entren limpias en ese rango diario
+                stmt = stmt.where(Sale.created_at.between(start_date, end_date))
+            except ValueError:
+                # Si por algún motivo el formato del string falla, lo ignoramos para no tumbar la app
+                pass
+        
+        # 3. Filtro para "Hoy" (Solo se aplica si no se especificó una fecha manual)
+        elif only_today:
             start_day = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
             stmt = stmt.where(Sale.created_at >= start_day)
         
         result = await db.execute(stmt.offset(skip).limit(limit))
         sales = result.scalars().all()
         
+        # Inyección de datos extras en caliente para el Frontend
         for sale in sales:
             if sale.customer:
                 sale.customer_name = sale.customer.name
@@ -45,15 +70,20 @@ class SaleController:
         if not sale_in.customer_id:
             raise ValueError("Debe seleccionar un cliente para crear la venta")
         
-        # 🌟 VALIDACIÓN: Detectar si es una venta pagada con dólares en efectivo
+        #  VALIDACIÓN: Detectar si es una venta pagada con dólares en efectivo
         is_efectivo_usd = any(p.method == "Efectivo_USD" for p in sale_in.payments)
         
         subtotal_usd = 0.0
         total_tax_usd = 0.0
         db_items = []
 
+        product_ids = [item.product_id for item in sale_in.items]
+        stmt = select(Product).where(Product.id.in_(product_ids)).with_for_update()
+        result = await db.execute(stmt)
+        locked_products = {product.id: product for product in result.scalars().all()}
+
         for item in sale_in.items:
-            product = await db.get(Product, item.product_id)
+            product = locked_products.get(item.product_id)
             if not product or product.stock_quantity < item.quantity:
                 raise ValueError(f"Stock insuficiente o producto {item.product_id} no encontrado")
 
@@ -61,7 +91,7 @@ class SaleController:
             price = item.matched_price if item.matched_price else product.price_usd
             item_subtotal = price * item.quantity
             
-            # 🌟 CONDICIONAL DEL IVA: Si paga en efectivo USD, el impuesto se anula (0.0)
+            # CONDICIONAL DEL IVA: Si paga en efectivo USD, el impuesto se anula (0.0)
             item_tax = 0.0 if is_efectivo_usd else (item_subtotal * product.tax_rate)
             
             subtotal_usd += item_subtotal
@@ -156,3 +186,20 @@ class SaleController:
             "month": await get_total(start_month),
             "year": await get_total(start_year)
         }
+
+    @staticmethod
+    async def delete(db: AsyncSession, sale_id: int, user_id: int):
+        sale = await SaleController.get_by_id(db, sale_id)
+        if not sale:
+            return None
+
+        # Restaurar stock
+        for item in sale.items:
+            if item.product:
+                item.product.stock_quantity += item.quantity
+
+        from app.services.audit_service import AuditService
+        await AuditService.log_action(db, user_id, "DELETE", "sales", f"Eliminada venta #{sale.id} (${sale.total_amount_usd:.2f})", commit=False)
+        await db.delete(sale)
+        await db.commit()
+        return sale

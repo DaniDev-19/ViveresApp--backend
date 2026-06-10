@@ -19,4 +19,6 @@ from . import (
     upload,
     settings,
     deliveries,
+    returns,
+    exchanges,
 )

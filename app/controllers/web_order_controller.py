@@ -95,17 +95,24 @@ class WebOrderController:
             return None
         
         if status == "approved" and order.status != "approved":
-            # 1. Validar stock de TODOS los productos primero
+            # 1. Bloquear los productos necesarios para evitar carreras concurrentes
+            product_ids = [item.product_id for item in order.items]
+            stmt = select(Product).where(Product.id.in_(product_ids)).with_for_update()
+            product_result = await db.execute(stmt)
+            locked_products = {product.id: product for product in product_result.scalars().all()}
+
+            # 2. Validar stock de TODOS los productos primero
             for item in order.items:
-                if not item.product:
+                product = locked_products.get(item.product_id)
+                if not product:
                     raise HTTPException(status_code=400, detail=f"Producto '{item.product_name}' no encontrado en inventario")
-                if item.product.stock_quantity < item.quantity:
+                if product.stock_quantity < item.quantity:
                     raise HTTPException(
-                        status_code=400, 
-                        detail=f"Stock insuficiente para '{item.product.name}': Solicitado {item.quantity}, Disponible {item.product.stock_quantity}"
+                        status_code=400,
+                        detail=f"Stock insuficiente para '{product.name}': Solicitado {item.quantity}, Disponible {product.stock_quantity}"
                     )
-            
-            # 2. Crear Venta usando los montos ya calculados en el pedido
+
+            # 3. Crear Venta usando los montos ya calculados en el pedido
             from app.models.sale import Sale, SaleStatus
             from app.models.sale_item import SaleItem
             from app.models.payment import Payment as PaymentModel
@@ -125,9 +132,10 @@ class WebOrderController:
             await db.flush() # Para obtener el ID de la venta
 
             for item in order.items:
+                product = locked_products[item.product_id]
                 # Descontar stock
-                item.product.stock_quantity -= item.quantity
-                db.add(item.product)
+                product.stock_quantity -= item.quantity
+                db.add(product)
 
                 # Crear item de venta
                 sale_item = SaleItem(
@@ -135,8 +143,8 @@ class WebOrderController:
                     product_id=item.product_id,
                     quantity=item.quantity,
                     unit_price_usd=item.price_usd,
-                    tax_rate=(getattr(item.product, 'tax_rate', 0.0) or 0.0) if getattr(item.product, 'apply_iva_web', True) else 0.0,
-                    applied_margin=getattr(item.product, 'profit_margin', 0.0)
+                    tax_rate=(getattr(product, 'tax_rate', 0.0) or 0.0) if getattr(product, 'apply_iva_web', True) else 0.0,
+                    applied_margin=getattr(product, 'profit_margin', 0.0)
                 )
                 db.add(sale_item)
 

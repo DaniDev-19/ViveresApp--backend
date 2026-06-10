@@ -726,23 +726,27 @@ class ReportService:
         elements.append(Paragraph(summary_text, summary_style))
         elements.append(Spacer(1, 15))
 
+        # Cell styles for word-wrap
+        cell_style = ParagraphStyle('CellWrap', parent=getSampleStyleSheet()['Normal'], fontSize=8, leading=10, wordWrap='CJK')
+        cell_style_center = ParagraphStyle('CellWrapCenter', parent=getSampleStyleSheet()['Normal'], fontSize=8, leading=10, alignment=TA_CENTER, wordWrap='CJK')
+
         # Table Headers
         headers = ["Código de Barra", "Nombre del Producto", "Stock Act.", "Stock Mín.", "Sugerido", "Costo U. ($)", "Total Est. ($)", "Proveedor Sugerido"]
         
         rows = []
         for p in products_data:
             rows.append([
-                p.get("barcode", ""),
-                p.get("name", ""),
+                Paragraph(str(p.get("barcode", "")), cell_style_center),
+                Paragraph(str(p.get("name", "")), cell_style),
                 f"{p.get('stock', 0)}",
                 f"{p.get('min_stock', 0)}",
                 f"+{p.get('suggested_refill', 0)}",
                 f"${p.get('cost_usd', 0.0):,.2f}",
                 f"${p.get('total_cost_usd', 0.0):,.2f}",
-                p.get("provider_name", "Sin Proveedor")
+                Paragraph(str(p.get("provider_name", "Sin Proveedor")), cell_style),
             ])
 
-        col_widths = [100, 200, 60, 60, 60, 80, 80, 130]
+        col_widths = [95, 210, 50, 50, 55, 75, 75, 130]
         
         t = Table([headers] + rows, colWidths=col_widths)
         
@@ -751,15 +755,16 @@ class ReportService:
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
             ('ALIGN', (1, 1), (1, -1), 'LEFT'),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, 0), 9),
+            ('FONTSIZE', (0, 0), (-1, 0), 8),
             ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
             ('TOPPADDING', (0, 0), (-1, 0), 6),
             ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#D1D5DB')),
             ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
-            ('FONTSIZE', (0, 1), (-1, -1), 9),
-            ('BOTTOMPADDING', (0, 1), (-1, -1), 5),
-            ('TOPPADDING', (0, 1), (-1, -1), 5),
+            ('FONTSIZE', (0, 1), (-1, -1), 8),
+            ('BOTTOMPADDING', (0, 1), (-1, -1), 4),
+            ('TOPPADDING', (0, 1), (-1, -1), 4),
         ]
         
         for i, p in enumerate(products_data):
@@ -889,6 +894,549 @@ class ReportService:
         elements.append(t)
         
         doc.build(elements)
+        buffer.seek(0)
+        return buffer
+
+    def generate_returns_exchanges_pdf(self, returns_data: List[Dict[str, Any]], exchanges_data: List[Dict[str, Any]], summary: Dict[str, Any], date_range: str) -> BytesIO:
+        buffer = BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=landscape(letter), rightMargin=20, leftMargin=20, topMargin=30, bottomMargin=30)
+        elements = []
+
+        elements.append(Paragraph(settings.BUSINESS_NAME.upper(), self._get_header_style()))
+        elements.append(Paragraph("Reporte de Devoluciones y Cambios", self._get_sub_header_style()))
+        elements.append(Paragraph(f"Periodo: {date_range} | Generado: {datetime.now().strftime('%d/%m/%Y %H:%M')}", self._get_sub_header_style()))
+        elements.append(Spacer(1, 10))
+
+        section_style = ParagraphStyle(
+            'SectionHeaderRE',
+            parent=getSampleStyleSheet()['Heading2'],
+            fontSize=13,
+            textColor=colors.HexColor('#1E293B'),
+            spaceBefore=15,
+            spaceAfter=8,
+            keepWithNext=True
+        )
+
+        # 1. Financial Impact Summary
+        elements.append(Paragraph("1. Resumen de Impacto Financiero", section_style))
+
+        summary_headers = ["Devoluciones", "Total Reembolsado ($)", "Cambios", "Diferencia Neta ($)", "Pérdida Total ($)"]
+        net_loss = summary.get("total_refund_usd", 0) + abs(min(0, summary.get("total_exchange_diff_usd", 0)))
+        summary_row = [
+            str(summary.get("total_returns", 0)),
+            f"${summary.get('total_refund_usd', 0):,.2f}",
+            str(summary.get("total_exchanges", 0)),
+            f"${summary.get('total_exchange_diff_usd', 0):+,.2f}",
+            f"${net_loss:,.2f}",
+        ]
+
+        t_summary = Table([summary_headers, summary_row], colWidths=[120, 140, 100, 140, 140])
+        t_summary.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#334155')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 9),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+            ('TOPPADDING', (0, 0), (-1, -1), 8),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#D1D5DB')),
+            ('BACKGROUND', (0, 1), (-1, 1), colors.HexColor('#F8FAFC')),
+            ('FONTNAME', (0, 1), (-1, 1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 1), (-1, 1), 11),
+            ('TEXTCOLOR', (1, 1), (1, 1), colors.HexColor('#DC2626')),
+            ('TEXTCOLOR', (4, 1), (4, 1), colors.HexColor('#DC2626')),
+        ]))
+        elements.append(t_summary)
+        elements.append(Spacer(1, 20))
+
+        # 2. Returns Table
+        elements.append(Paragraph(f"2. Detalle de Devoluciones ({len(returns_data)} registros)", section_style))
+
+        if returns_data:
+            ret_headers = ["#", "Venta", "Fecha", "Productos", "Método", "Nota Crédito", "Motivo", "Total ($)"]
+            ret_rows = []
+            for r in returns_data:
+                ret_rows.append([
+                    str(r["id"]),
+                    f"#{r['sale_id']}",
+                    r["date"],
+                    r["items"][:30],
+                    r["method"],
+                    r["credit_note"],
+                    r["reason"][:20],
+                    f"${r['total']:,.2f}",
+                ])
+
+            # Totals row
+            ret_rows.append([
+                "TOTAL", "", "", "", "", "", "",
+                f"${summary.get('total_refund_usd', 0):,.2f}"
+            ])
+
+            col_widths = [30, 45, 85, 180, 75, 80, 100, 65]
+            t_ret = Table([ret_headers] + ret_rows, colWidths=col_widths)
+            t_ret.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#DC2626')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 8),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
+                ('TOPPADDING', (0, 0), (-1, 0), 6),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#D1D5DB')),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -2), [colors.white, colors.HexColor('#FEF2F2')]),
+                ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+                ('FONTSIZE', (0, 1), (-1, -1), 8),
+                ('BOTTOMPADDING', (0, 1), (-1, -1), 4),
+                ('TOPPADDING', (0, 1), (-1, -1), 4),
+                # Footer
+                ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#FEE2E2')),
+                ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, -1), (-1, -1), 9),
+                ('SPAN', (0, -1), (6, -1)),
+            ]))
+            elements.append(t_ret)
+        else:
+            elements.append(Paragraph("No se encontraron devoluciones en el periodo seleccionado.", ParagraphStyle('NoData', parent=getSampleStyleSheet()['Normal'], fontSize=10, textColor=colors.grey, alignment=TA_CENTER)))
+
+        elements.append(Spacer(1, 20))
+
+        # 3. Exchanges Table
+        elements.append(Paragraph(f"3. Detalle de Cambios ({len(exchanges_data)} registros)", section_style))
+
+        if exchanges_data:
+            ex_headers = ["#", "Venta", "Fecha", "Devueltos por Cliente", "Entregados al Cliente", "Diferencia ($)", "Motivo"]
+            ex_rows = []
+            for ex in exchanges_data:
+                diff_val = ex["difference"]
+                diff_str = f"${diff_val:+,.2f}"
+                ex_rows.append([
+                    str(ex["id"]),
+                    f"#{ex['sale_id']}",
+                    ex["date"],
+                    ex["items_out"][:28],
+                    ex["items_in"][:28],
+                    diff_str,
+                    ex["reason"][:20],
+                ])
+
+            col_widths_ex = [30, 45, 85, 170, 170, 80, 80]
+            t_ex = Table([ex_headers] + ex_rows, colWidths=col_widths_ex)
+            t_ex.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#D97706')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 8),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
+                ('TOPPADDING', (0, 0), (-1, 0), 6),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#D1D5DB')),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#FFFBEB')]),
+                ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+                ('FONTSIZE', (0, 1), (-1, -1), 8),
+                ('BOTTOMPADDING', (0, 1), (-1, -1), 4),
+                ('TOPPADDING', (0, 1), (-1, -1), 4),
+            ]))
+            elements.append(t_ex)
+        else:
+            elements.append(Paragraph("No se encontraron cambios en el periodo seleccionado.", ParagraphStyle('NoDataEx', parent=getSampleStyleSheet()['Normal'], fontSize=10, textColor=colors.grey, alignment=TA_CENTER)))
+
+        doc.build(elements)
+        buffer.seek(0)
+        return buffer
+
+    def generate_returns_exchanges_excel(self, returns_data: List[Dict[str, Any]], exchanges_data: List[Dict[str, Any]], summary: Dict[str, Any]) -> BytesIO:
+        wb = openpyxl.Workbook()
+        header_font = Font(bold=True, color="FFFFFF", size=11)
+        border = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
+
+        # --- Sheet 1: Resumen ---
+        ws_summary = wb.active
+        ws_summary.title = "Resumen"
+        ws_summary.merge_cells('A1:D1')
+        ws_summary.cell(row=1, column=1, value=settings.BUSINESS_NAME.upper())
+        ws_summary.cell(row=1, column=1).font = Font(bold=True, size=16)
+        ws_summary.cell(row=1, column=1).alignment = Alignment(horizontal="center")
+
+        summary_headers = ["Métrica", "Valor"]
+        summary_fill = PatternFill(start_color="334155", end_color="334155", fill_type="solid")
+        for col, h in enumerate(summary_headers, 1):
+            cell = ws_summary.cell(row=3, column=col, value=h)
+            cell.font = header_font
+            cell.fill = summary_fill
+            cell.alignment = Alignment(horizontal="center")
+            cell.border = border
+
+        summary_rows = [
+            ("Total Devoluciones", summary.get("total_returns", 0)),
+            ("Total Reembolsado ($)", summary.get("total_refund_usd", 0)),
+            ("Total Cambios", summary.get("total_exchanges", 0)),
+            ("Diferencia Neta Cambios ($)", summary.get("total_exchange_diff_usd", 0)),
+        ]
+        for i, (label, val) in enumerate(summary_rows, 4):
+            ws_summary.cell(row=i, column=1, value=label).border = border
+            c = ws_summary.cell(row=i, column=2, value=val)
+            c.border = border
+            if isinstance(val, float):
+                c.number_format = '"$"#,##0.00'
+
+        ws_summary.column_dimensions['A'].width = 30
+        ws_summary.column_dimensions['B'].width = 20
+
+        # --- Sheet 2: Devoluciones ---
+        ws_ret = wb.create_sheet("Devoluciones")
+        ret_headers = ["ID", "Venta", "Fecha", "Productos", "Método", "Nota Crédito", "Motivo", "Total ($)"]
+        ret_fill = PatternFill(start_color="DC2626", end_color="DC2626", fill_type="solid")
+
+        for col, h in enumerate(ret_headers, 1):
+            cell = ws_ret.cell(row=1, column=col, value=h)
+            cell.font = header_font
+            cell.fill = ret_fill
+            cell.alignment = Alignment(horizontal="center")
+            cell.border = border
+
+        for row_num, r in enumerate(returns_data, 2):
+            ws_ret.cell(row=row_num, column=1, value=r["id"]).border = border
+            ws_ret.cell(row=row_num, column=2, value=r["sale_id"]).border = border
+            ws_ret.cell(row=row_num, column=3, value=r["date"]).border = border
+            ws_ret.cell(row=row_num, column=4, value=r["items"]).border = border
+            ws_ret.cell(row=row_num, column=5, value=r["method"]).border = border
+            ws_ret.cell(row=row_num, column=6, value=r["credit_note"]).border = border
+            ws_ret.cell(row=row_num, column=7, value=r["reason"]).border = border
+            c = ws_ret.cell(row=row_num, column=8, value=r["total"])
+            c.number_format = '"$"#,##0.00'
+            c.border = border
+
+        for col_letter in ['A','B','C','D','E','F','G','H']:
+            ws_ret.column_dimensions[col_letter].width = 18
+        ws_ret.column_dimensions['D'].width = 40
+
+        # --- Sheet 3: Cambios ---
+        ws_ex = wb.create_sheet("Cambios")
+        ex_headers = ["ID", "Venta", "Fecha", "Devueltos por Cliente", "Entregados al Cliente", "Diferencia ($)", "Motivo"]
+        ex_fill = PatternFill(start_color="D97706", end_color="D97706", fill_type="solid")
+
+        for col, h in enumerate(ex_headers, 1):
+            cell = ws_ex.cell(row=1, column=col, value=h)
+            cell.font = header_font
+            cell.fill = ex_fill
+            cell.alignment = Alignment(horizontal="center")
+            cell.border = border
+
+        for row_num, ex in enumerate(exchanges_data, 2):
+            ws_ex.cell(row=row_num, column=1, value=ex["id"]).border = border
+            ws_ex.cell(row=row_num, column=2, value=ex["sale_id"]).border = border
+            ws_ex.cell(row=row_num, column=3, value=ex["date"]).border = border
+            ws_ex.cell(row=row_num, column=4, value=ex["items_out"]).border = border
+            ws_ex.cell(row=row_num, column=5, value=ex["items_in"]).border = border
+            c = ws_ex.cell(row=row_num, column=6, value=ex["difference"])
+            c.number_format = '"$"#,##0.00'
+            c.border = border
+            ws_ex.cell(row=row_num, column=7, value=ex["reason"]).border = border
+
+        for col_letter in ['A','B','C','D','E','F','G']:
+            ws_ex.column_dimensions[col_letter].width = 18
+        ws_ex.column_dimensions['D'].width = 35
+        ws_ex.column_dimensions['E'].width = 35
+
+        buffer = BytesIO()
+        wb.save(buffer)
+        buffer.seek(0)
+        return buffer
+
+    def generate_cash_close_excel(self, cash_data: Dict[str, Any], date_str: str) -> BytesIO:
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Cierre de Caja"
+        header_font = Font(bold=True, color="FFFFFF", size=11)
+        border = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
+
+        # Title
+        ws.merge_cells('A1:D1')
+        ws.cell(row=1, column=1, value=settings.BUSINESS_NAME.upper())
+        ws.cell(row=1, column=1).font = Font(bold=True, size=16)
+        ws.cell(row=1, column=1).alignment = Alignment(horizontal="center")
+
+        ws.merge_cells('A2:D2')
+        ws.cell(row=2, column=1, value=f"Cierre de Caja - {date_str}")
+        ws.cell(row=2, column=1).font = Font(bold=True, size=12, color="666666")
+        ws.cell(row=2, column=1).alignment = Alignment(horizontal="center")
+
+        # Section 1: Summary
+        summary_fill = PatternFill(start_color="334155", end_color="334155", fill_type="solid")
+        summary_headers = ["Transacciones", "Facturación Total ($)", "Total IVA ($)", "Ganancia Neta ($)"]
+        for col, h in enumerate(summary_headers, 1):
+            cell = ws.cell(row=4, column=col, value=h)
+            cell.font = header_font
+            cell.fill = summary_fill
+            cell.alignment = Alignment(horizontal="center")
+            cell.border = border
+
+        ws.cell(row=5, column=1, value=cash_data.get("total_sales_count", 0)).border = border
+        ws.cell(row=5, column=2, value=cash_data.get("total_revenue_usd", 0)).number_format = '"$"#,##0.00'
+        ws.cell(row=5, column=2).border = border
+        ws.cell(row=5, column=3, value=cash_data.get("total_tax_usd", 0)).number_format = '"$"#,##0.00'
+        ws.cell(row=5, column=3).border = border
+        c_profit = ws.cell(row=5, column=4, value=cash_data.get("total_profit_usd", 0))
+        c_profit.number_format = '"$"#,##0.00'
+        c_profit.font = Font(bold=True, color="10B981")
+        c_profit.border = border
+
+        # Section 2: Payment Breakdown
+        pay_fill = PatternFill(start_color="4F46E5", end_color="4F46E5", fill_type="solid")
+        pay_headers = ["Método de Pago", "Operaciones", "Monto Recaudado", "Equiv. USD"]
+        for col, h in enumerate(pay_headers, 1):
+            cell = ws.cell(row=7, column=col, value=h)
+            cell.font = header_font
+            cell.fill = pay_fill
+            cell.alignment = Alignment(horizontal="center")
+            cell.border = border
+
+        for i, pm in enumerate(cash_data.get("payment_breakdown", []), 8):
+            ws.cell(row=i, column=1, value=pm.get("name", "")).border = border
+            ws.cell(row=i, column=2, value=pm.get("count", 0)).border = border
+            c_amt = ws.cell(row=i, column=3, value=pm.get("amount", 0))
+            cur = pm.get("currency", "USD")
+            c_amt.number_format = '"Bs. "#,##0.00' if cur == "VES" else '"$"#,##0.00'
+            c_amt.border = border
+            c_usd = ws.cell(row=i, column=4, value=pm.get("amount_usd", 0))
+            c_usd.number_format = '"$"#,##0.00'
+            c_usd.border = border
+
+        for col_letter in ['A','B','C','D']:
+            ws.column_dimensions[col_letter].width = 22
+
+        buffer = BytesIO()
+        wb.save(buffer)
+        buffer.seek(0)
+        return buffer
+
+    def generate_profitability_pdf(self, products_data: List[Dict[str, Any]], summary: Dict[str, Any], date_range: str) -> BytesIO:
+        buffer = BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=landscape(letter), rightMargin=20, leftMargin=20, topMargin=30, bottomMargin=30)
+        elements = []
+
+        elements.append(Paragraph(settings.BUSINESS_NAME.upper(), self._get_header_style()))
+        elements.append(Paragraph("Reporte de Rentabilidad y Ventas por Producto", self._get_sub_header_style()))
+        elements.append(Paragraph(f"Periodo: {date_range} | Generado: {datetime.now().strftime('%d/%m/%Y %H:%M')}", self._get_sub_header_style()))
+        elements.append(Spacer(1, 10))
+
+        section_style = ParagraphStyle(
+            'SectionHeaderProfit',
+            parent=getSampleStyleSheet()['Heading2'],
+            fontSize=13,
+            textColor=colors.HexColor('#0F766E'),
+            spaceBefore=12,
+            spaceAfter=6,
+            keepWithNext=True
+        )
+
+        # 1. Resumen Metrics Table
+        elements.append(Paragraph("1. Resumen de Desempeño Financiero", section_style))
+        metrics_headers = ["Unidades Vendidas", "Ingreso Total ($)", "Costo Total ($)", "Ganancia Bruta ($)", "Margen Promedio (%)"]
+        metrics_row = [
+            f"{summary.get('total_qty', 0):,}",
+            f"${summary.get('total_revenue', 0.0):,.2f}",
+            f"${summary.get('total_cost', 0.0):,.2f}",
+            f"${summary.get('total_profit', 0.0):,.2f}",
+            f"{summary.get('avg_margin', 0.0):.1f}%"
+        ]
+        
+        t_metrics = Table([metrics_headers, metrics_row], colWidths=[150, 150, 150, 150, 140])
+        t_metrics.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#0F766E')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ('TOPPADDING', (0, 0), (-1, -1), 6),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#D1D5DB')),
+            ('BACKGROUND', (0, 1), (-1, 1), colors.HexColor('#F0FDF4')),
+            ('FONTNAME', (0, 1), (-1, 1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 1), (-1, 1), 11),
+            ('TEXTCOLOR', (3, 1), (3, 1), colors.HexColor('#059669')),
+        ]))
+        elements.append(t_metrics)
+        elements.append(Spacer(1, 15))
+
+        # 2. Product Details Table
+        elements.append(Paragraph("2. Rendimiento Detallado de Productos", section_style))
+
+        # We will wrap the product names in Paragraph to avoid overflow.
+        name_cell_style = ParagraphStyle(
+            'ProdNameCell',
+            parent=getSampleStyleSheet()['Normal'],
+            fontSize=8,
+            leading=9,
+            wordWrap='CJK'
+        )
+
+        headers = ["Código", "Producto", "Cant. Vendida", "Costo ($)", "Precio ($)", "Ingreso Total ($)", "Ganancia ($)", "Margen (%)"]
+        rows = [headers]
+
+        for p in products_data:
+            name_p = Paragraph(p.get("name", "N/A"), name_cell_style)
+            margin = p.get("margin", 0.0)
+            rows.append([
+                p.get("barcode", "N/A"),
+                name_p,
+                f"{p.get('quantity', 0):,}",
+                f"${p.get('cost', 0.0):,.2f}",
+                f"${p.get('price', 0.0):,.2f}",
+                f"${p.get('revenue', 0.0):,.2f}",
+                f"${p.get('profit', 0.0):,.2f}",
+                f"{margin:.1f}%"
+            ])
+
+        col_widths = [80, 230, 60, 60, 60, 90, 90, 70]
+        t_prod = Table(rows, colWidths=col_widths)
+        t_prod.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#0369A1')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('ALIGN', (1, 1), (1, -1), 'LEFT'),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 9),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+            ('TOPPADDING', (0, 0), (-1, 0), 8),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#E2E8F0')),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F8FAFC')]),
+            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 1), (-1, -1), 8),
+            ('BOTTOMPADDING', (0, 1), (-1, -1), 6),
+            ('TOPPADDING', (0, 1), (-1, -1), 6),
+        ]))
+
+        elements.append(t_prod)
+        doc.build(elements)
+        buffer.seek(0)
+        return buffer
+
+    def generate_profitability_excel(self, products_data: List[Dict[str, Any]], summary: Dict[str, Any]) -> BytesIO:
+        wb = openpyxl.Workbook()
+        header_font = Font(bold=True, color="FFFFFF", size=11)
+        border = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
+
+        # --- Sheet 1: Resumen ---
+        ws_summary = wb.active
+        ws_summary.title = "Resumen de Rentabilidad"
+        ws_summary.merge_cells('A1:D1')
+        ws_summary.cell(row=1, column=1, value=settings.BUSINESS_NAME.upper())
+        ws_summary.cell(row=1, column=1).font = Font(bold=True, size=16)
+        ws_summary.cell(row=1, column=1).alignment = Alignment(horizontal="center")
+
+        summary_headers = ["Métrica", "Valor"]
+        summary_fill = PatternFill(start_color="0F766E", end_color="0F766E", fill_type="solid")
+        for col, h in enumerate(summary_headers, 1):
+            cell = ws_summary.cell(row=3, column=col, value=h)
+            cell.font = header_font
+            cell.fill = summary_fill
+            cell.alignment = Alignment(horizontal="center")
+            cell.border = border
+
+        summary_rows = [
+            ("Total Unidades Vendidas", summary.get("total_qty", 0)),
+            ("Ingreso Total ($)", summary.get("total_revenue", 0.0)),
+            ("Costo Total ($)", summary.get("total_cost", 0.0)),
+            ("Ganancia Bruta ($)", summary.get("total_profit", 0.0)),
+            ("Margen de Ganancia Promedio", f"{summary.get('avg_margin', 0.0):.2f}%"),
+        ]
+        for i, (label, val) in enumerate(summary_rows, 4):
+            ws_summary.cell(row=i, column=1, value=label).border = border
+            c = ws_summary.cell(row=i, column=2, value=val)
+            c.border = border
+            if isinstance(val, float):
+                c.number_format = '"$"#,##0.00'
+            elif isinstance(val, int):
+                c.number_format = '#,##0'
+
+        ws_summary.column_dimensions['A'].width = 30
+        ws_summary.column_dimensions['B'].width = 20
+
+        # --- Sheet 2: Rendimiento Detallado ---
+        ws_det = wb.create_sheet("Rendimiento por Producto")
+        det_headers = ["Código", "Producto", "Cant. Vendida", "Costo Unit. ($)", "Precio Unit. ($)", "Ingreso Total ($)", "Ganancia ($)", "Margen (%)"]
+        det_fill = PatternFill(start_color="0369A1", end_color="0369A1", fill_type="solid")
+
+        for col, h in enumerate(det_headers, 1):
+            cell = ws_det.cell(row=1, column=col, value=h)
+            cell.font = header_font
+            cell.fill = det_fill
+            cell.alignment = Alignment(horizontal="center")
+            cell.border = border
+
+        for row_num, p in enumerate(products_data, 2):
+            ws_det.cell(row=row_num, column=1, value=p["barcode"]).border = border
+            ws_det.cell(row=row_num, column=2, value=p["name"]).border = border
+            
+            c_qty = ws_det.cell(row=row_num, column=3, value=p["quantity"])
+            c_qty.number_format = '#,##0'
+            c_qty.border = border
+
+            c_cost = ws_det.cell(row=row_num, column=4, value=p["cost"])
+            c_cost.number_format = '"$"#,##0.00'
+            c_cost.border = border
+
+            c_price = ws_det.cell(row=row_num, column=5, value=p["price"])
+            c_price.number_format = '"$"#,##0.00'
+            c_price.border = border
+
+            c_rev = ws_det.cell(row=row_num, column=6, value=p["revenue"])
+            c_rev.number_format = '"$"#,##0.00'
+            c_rev.border = border
+
+            c_prof = ws_det.cell(row=row_num, column=7, value=p["profit"])
+            c_prof.number_format = '"$"#,##0.00'
+            c_prof.border = border
+
+            c_marg = ws_det.cell(row=row_num, column=8, value=p["margin"]/100.0)
+            c_marg.number_format = '0.0%'
+            c_marg.border = border
+
+        # Set width
+        ws_det.column_dimensions['A'].width = 15
+        ws_det.column_dimensions['B'].width = 35
+        for col_letter in ['C','D','E','F','G','H']:
+            ws_det.column_dimensions[col_letter].width = 18
+
+        # Totals Row at the bottom of sheet 2
+        last_row = len(products_data) + 1
+        tot_row = last_row + 1
+        ws_det.cell(row=tot_row, column=1, value="TOTALES").font = Font(bold=True)
+        ws_det.cell(row=tot_row, column=1).border = border
+        ws_det.cell(row=tot_row, column=2, value="").border = border
+
+        # Sum Quantity (C)
+        cell_qty = ws_det.cell(row=tot_row, column=3, value=f"=SUM(C2:C{last_row})")
+        cell_qty.font = Font(bold=True)
+        cell_qty.number_format = '#,##0'
+        cell_qty.border = border
+
+        ws_det.cell(row=tot_row, column=4, value="").border = border
+        ws_det.cell(row=tot_row, column=5, value="").border = border
+
+        # Sum Revenue (F)
+        cell_rev = ws_det.cell(row=tot_row, column=6, value=f"=SUM(F2:F{last_row})")
+        cell_rev.font = Font(bold=True)
+        cell_rev.number_format = '"$"#,##0.00'
+        cell_rev.border = border
+
+        # Sum Profit (G)
+        cell_prof = ws_det.cell(row=tot_row, column=7, value=f"=SUM(G2:G{last_row})")
+        cell_prof.font = Font(bold=True)
+        cell_prof.number_format = '"$"#,##0.00'
+        cell_prof.border = border
+
+        # Avg Margin (H)
+        cell_marg = ws_det.cell(row=tot_row, column=8, value=f"=AVERAGE(H2:H{last_row})")
+        cell_marg.font = Font(bold=True)
+        cell_marg.number_format = '0.0%'
+        cell_marg.border = border
+
+        buffer = BytesIO()
+        wb.save(buffer)
         buffer.seek(0)
         return buffer
 
