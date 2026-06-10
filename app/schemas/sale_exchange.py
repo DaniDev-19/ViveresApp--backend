@@ -11,6 +11,7 @@ class ExchangeItemOutCreate(BaseModel):
 class ExchangeItemInCreate(BaseModel):
     product_id: int
     quantity: int = Field(gt=0)
+    unit_price_usd: Optional[float] = Field(default=None, gt=0)
 
 
 class ExchangeCreate(BaseModel):

@@ -103,7 +103,7 @@ class ExchangeController:
             if product.stock_quantity < item_in.quantity:
                 raise ValueError(f"Stock insuficiente para producto {product.name} (disponible: {product.stock_quantity})")
 
-            unit_price = product.price_usd
+            unit_price = item_in.unit_price_usd if item_in.unit_price_usd is not None else product.price_usd
             subtotal = unit_price * item_in.quantity
             total_in += subtotal
 
