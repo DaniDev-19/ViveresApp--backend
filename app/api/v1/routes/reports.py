@@ -1514,7 +1514,6 @@ async def export_deliveries_report(
         headers={"Content-Disposition": "inline; filename=reporte_entregas.pdf"},
     )
 
-
 @router.get("/profitability/export")
 async def export_profitability_report(
     start_date: Optional[date] = None,
@@ -1534,7 +1533,7 @@ async def export_profitability_report(
                 Product.barcode,
                 Product.cost_price,
                 func.sum(SaleItem.quantity).label("quantity"),
-                func.sum(SaleItem.price_usd * SaleItem.quantity).label("revenue")
+                func.sum(SaleItem.unit_price_usd * SaleItem.quantity).label("revenue")
             )
             .join(Sale, SaleItem.sale_id == Sale.id)
             .join(Product, SaleItem.product_id == Product.id)
