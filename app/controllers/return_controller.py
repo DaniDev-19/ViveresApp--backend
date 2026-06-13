@@ -150,13 +150,23 @@ class ReturnController:
             db.add(payment)
         elif return_in.refund_method == "original":
             original_payment = sale.payments[0] if sale.payments else None
-            method = original_payment.method if original_payment else "Refund_Original"
+            if original_payment:
+                method = original_payment.method
+                currency = original_payment.currency
+                rate = original_payment.exchange_rate
+                amount = total_refund * rate if currency == "VES" else total_refund
+            else:
+                method = "Original"
+                currency = "USD"
+                rate = 1.0
+                amount = total_refund
+                
             payment = Payment(
                 sale_id=sale.id,
                 method=f"Refund_{method}",
-                amount=total_refund,
-                currency="USD",
-                exchange_rate=1.0,
+                amount=amount,
+                currency=currency,
+                exchange_rate=rate,
                 amount_usd_equivalent=total_refund
             )
             db.add(payment)

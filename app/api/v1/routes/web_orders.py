@@ -39,3 +39,15 @@ async def update_order_status(
         raise HTTPException(status_code=404, detail="Pedido no encontrado")
     return order
 
+@router.delete("/{order_id}")
+async def delete_order(
+    *,
+    db: AsyncSession = Depends(deps.get_db),
+    order_id: int,
+    current_user: User = Depends(deps.verify_roles([UserRole.ADMIN, UserRole.WORKER])),
+):
+    success = await WebOrderController.delete(db, order_id=order_id, user_id=current_user.id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Pedido no encontrado")
+    return {"status": "ok"}
+

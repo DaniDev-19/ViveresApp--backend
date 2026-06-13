@@ -192,12 +192,225 @@ class ReportService:
         buffer.seek(0)
         return buffer
 
-    def generate_inventory_pdf(self, products_data: List[Dict[str, Any]], report_type: str = "standard") -> BytesIO:
+    def generate_returns_excel(self, returns_data: List[Dict[str, Any]]) -> BytesIO:
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Reporte de Devoluciones"
+
+        ws.merge_cells('A1:G1')
+        ws['A1'] = f"{settings.BUSINESS_NAME.upper()} - DEVOLUCIONES Y CAMBIOS"
+        ws['A1'].font = Font(bold=True, size=16)
+        ws['A1'].alignment = Alignment(horizontal="center")
+        
+        headers = ["ID", "Tipo Operación", "Fecha", "Venta Original", "Items Involucrados", "Diferencia / Reembolso ($)", "Razón", "Estado"]
+        header_font = Font(bold=True, color="FFFFFF", size=12)
+        header_fill = PatternFill(start_color="EF4444", end_color="EF4444", fill_type="solid")
+        border = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
+        
+        for col_num, header in enumerate(headers, 1):
+            cell = ws.cell(row=2, column=col_num, value=header)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+            cell.border = border
+            ws.column_dimensions[openpyxl.utils.get_column_letter(col_num)].width = 20
+
+        ws.column_dimensions['E'].width = 40 
+        ws.column_dimensions['G'].width = 30
+
+        last_row = 3
+        for row_num, ret in enumerate(returns_data, 3):
+            try:
+                ws.cell(row=row_num, column=1, value=ret.get("id"))
+                ws.cell(row=row_num, column=2, value=str(ret.get("type", "")))
+                ws.cell(row=row_num, column=3, value=str(ret.get("date", "")))
+                ws.cell(row=row_num, column=4, value=f"Venta #{ret.get('sale_id', '')}")
+                ws.cell(row=row_num, column=5, value=str(ret.get("items", "")))
+                
+                amount_cell = ws.cell(row=row_num, column=6, value=ret.get("amount", 0))
+                amount_cell.number_format = '"$"#,##0.00'
+                if ret.get("type") == "Devolución" or (ret.get("type") == "Cambio" and ret.get("amount", 0) < 0):
+                    amount_cell.font = Font(color="EF4444", bold=True)
+                elif ret.get("type") == "Cambio" and ret.get("amount", 0) > 0:
+                    amount_cell.font = Font(color="10B981", bold=True)
+                
+                ws.cell(row=row_num, column=7, value=str(ret.get("reason", "N/A")))
+                ws.cell(row=row_num, column=8, value=str(ret.get("status", "")))
+
+                for i in range(1, 9):
+                    ws.cell(row=row_num, column=i).border = border
+                
+                last_row = row_num
+            except Exception as e:
+                print(f"Error processing row {row_num}: {e}")
+                continue
+
+        buffer = BytesIO()
+        wb.save(buffer)
+        buffer.seek(0)
+        return buffer
+
+    def generate_returns_pdf(self, returns_data: List[Dict[str, Any]]) -> BytesIO:
         buffer = BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
         elements = []
         
         elements.append(Paragraph(settings.BUSINESS_NAME.upper(), self._get_header_style()))
+        elements.append(Paragraph("Reporte de Devoluciones y Cambios", self._get_sub_header_style()))
+        elements.append(Paragraph(f"Generado: {datetime.now().strftime('%d/%m/%Y %H:%M')}", self._get_sub_header_style()))
+        elements.append(Spacer(1, 15))
+
+        headers = ["Fecha", "Tipo", "Venta", "Diferencia / Reembolso", "Razón", "Estado"]
+        col_widths = [70, 70, 50, 110, 152, 70]
+        
+        rows = []
+        for r in returns_data:
+            amount_str = f"${r.get('amount', 0):,.2f}"
+            rows.append([
+                r.get("date", "")[:10],
+                r.get("type", ""),
+                f"#{r.get('sale_id', '')}",
+                amount_str,
+                Paragraph(r.get("reason", "N/A"), getSampleStyleSheet()['Normal']),
+                r.get("status", "")
+            ])
+
+        t = Table([headers] + rows, colWidths=col_widths)
+        t.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#EF4444')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('ALIGN', (3, 1), (3, -1), 'RIGHT'), # Monto right
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 9),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+            ('TOPPADDING', (0, 0), (-1, 0), 8),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#D1D5DB')),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F9FAFB')]),
+            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 1), (-1, -1), 9),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ]))
+        
+        elements.append(t)
+        doc.build(elements)
+        buffer.seek(0)
+        return buffer
+
+    def generate_web_orders_excel(self, orders_data: List[Dict[str, Any]]) -> BytesIO:
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Reporte de Pedidos Web"
+
+        ws.merge_cells('A1:G1')
+        ws['A1'] = f"{settings.BUSINESS_NAME.upper()} - PEDIDOS WEB"
+        ws['A1'].font = Font(bold=True, size=16)
+        ws['A1'].alignment = Alignment(horizontal="center")
+        
+        headers = ["ID", "Fecha", "Cliente", "Teléfono", "Pago", "Total ($)", "Estado"]
+        header_font = Font(bold=True, color="FFFFFF", size=12)
+        header_fill = PatternFill(start_color="3B82F6", end_color="3B82F6", fill_type="solid")
+        border = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
+        
+        for col_num, header in enumerate(headers, 1):
+            cell = ws.cell(row=2, column=col_num, value=header)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+            cell.border = border
+            ws.column_dimensions[openpyxl.utils.get_column_letter(col_num)].width = 20
+
+        ws.column_dimensions['C'].width = 30
+
+        last_row = 3
+        for row_num, order in enumerate(orders_data, 3):
+            try:
+                ws.cell(row=row_num, column=1, value=order.get("id"))
+                ws.cell(row=row_num, column=2, value=str(order.get("date", "")))
+                ws.cell(row=row_num, column=3, value=str(order.get("customer", "")))
+                ws.cell(row=row_num, column=4, value=str(order.get("phone", "")))
+                ws.cell(row=row_num, column=5, value=str(order.get("payment", "")))
+                
+                amount_cell = ws.cell(row=row_num, column=6, value=order.get("total", 0))
+                amount_cell.number_format = '"$"#,##0.00'
+                
+                ws.cell(row=row_num, column=7, value=str(order.get("status", "")))
+
+                for i in range(1, 8):
+                    ws.cell(row=row_num, column=i).border = border
+                
+                last_row = row_num
+            except Exception as e:
+                print(f"Error processing row {row_num}: {e}")
+                continue
+
+        buffer = BytesIO()
+        wb.save(buffer)
+        buffer.seek(0)
+        return buffer
+
+    def generate_web_orders_pdf(self, orders_data: List[Dict[str, Any]]) -> BytesIO:
+        buffer = BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
+        elements = []
+        
+        elements.append(Paragraph(settings.BUSINESS_NAME.upper(), self._get_header_style()))
+        elements.append(Paragraph("Reporte de Pedidos Web", self._get_sub_header_style()))
+        elements.append(Paragraph(f"Generado: {datetime.now().strftime('%d/%m/%Y %H:%M')}", self._get_sub_header_style()))
+        elements.append(Spacer(1, 15))
+
+        headers = ["Fecha", "ID", "Cliente", "Pago", "Total", "Estado"]
+        col_widths = [80, 40, 150, 100, 80, 100]
+        
+        rows = []
+        for o in orders_data:
+            amount_str = f"${o.get('total', 0):,.2f}"
+            rows.append([
+                o.get("date", "")[:10],
+                f"#{o.get('id', '')}",
+                o.get("customer", "")[:30],
+                o.get("payment", ""),
+                amount_str,
+                o.get("status", "")
+            ])
+
+        t = Table([headers] + rows, colWidths=col_widths)
+        t.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#3B82F6')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('ALIGN', (4, 1), (4, -1), 'RIGHT'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 9),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+            ('TOPPADDING', (0, 0), (-1, 0), 8),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#D1D5DB')),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F9FAFB')]),
+            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 1), (-1, -1), 9),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ]))
+        
+        elements.append(t)
+        doc.build(elements)
+        buffer.seek(0)
+        return buffer
+
+    def generate_inventory_pdf(self, products_data: List[Dict[str, Any]], report_type: str = "standard", provider_name: str | None = None) -> BytesIO:
+        buffer = BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
+        elements = []
+        
+        elements.append(Paragraph(settings.BUSINESS_NAME.upper(), self._get_header_style()))
+        if provider_name:
+            elements.append(Paragraph(f"Proveedor: {provider_name}", ParagraphStyle(
+                'ProviderHeader',
+                parent=getSampleStyleSheet()['Normal'],
+                fontSize=11,
+                textColor=colors.HexColor('#374151'),
+                alignment=TA_CENTER,
+                spaceAfter=10
+            )))
         
         if report_type == "code_name":
             title_text = "Reporte de Catálogo (Código y Nombre)"
@@ -267,7 +480,7 @@ class ReportService:
         buffer.seek(0)
         return buffer
 
-    def generate_inventory_excel(self, products_data: List[Dict[str, Any]], report_type: str = "standard") -> BytesIO:
+    def generate_inventory_excel(self, products_data: List[Dict[str, Any]], report_type: str = "standard", provider_name: str | None = None) -> BytesIO:
         wb = openpyxl.Workbook()
         ws = wb.active
         ws.title = "Inventario"
@@ -287,12 +500,20 @@ class ReportService:
         ws.cell(row=1, column=1).font = Font(bold=True, size=16)
         ws.cell(row=1, column=1).alignment = Alignment(horizontal="center")
 
+        header_row = 2
+        if provider_name:
+            ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=max_col)
+            ws.cell(row=2, column=1, value=f"Proveedor: {provider_name}")
+            ws.cell(row=2, column=1).font = Font(bold=True, size=12)
+            ws.cell(row=2, column=1).alignment = Alignment(horizontal="left")
+            header_row = 3
+
         header_font = Font(bold=True, color="FFFFFF", size=12)
         header_fill = PatternFill(start_color="10B981", end_color="10B981", fill_type="solid")
         border = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
 
         for col_num, header in enumerate(headers, 1):
-            cell = ws.cell(row=2, column=col_num, value=header)
+            cell = ws.cell(row=header_row, column=col_num, value=header)
             cell.font = header_font
             cell.fill = header_fill
             cell.alignment = Alignment(horizontal="center", vertical="center")

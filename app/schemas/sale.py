@@ -26,6 +26,7 @@ class SaleResponse(BaseModel):
     id: int
     total_amount_usd: float
     total_tax_usd: float = 0.0
+    net_amount_usd: Optional[float] = None
     has_delivery: bool = False
     delivery_amount_usd: float = 0.0
     status: str

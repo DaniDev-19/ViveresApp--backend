@@ -144,13 +144,29 @@ class ExchangeController:
             if product:
                 product.stock_quantity -= item_data["quantity"]
 
+        # Determine currency and rate for the payment
+        from app.services.currency import currency_service
+        rates = await currency_service.get_latest_rates(db)
+        bcv_rate = 40.0
+        for r in rates:
+            if r.currency == "BCV":
+                bcv_rate = r.rate
+                break
+                
+        def get_payment_details(method_name: str, usd_amount: float):
+            method_lower = (method_name or "").lower()
+            if "pago" in method_lower or "movil" in method_lower or "punto" in method_lower or "bs" in method_lower or "ves" in method_lower:
+                return "VES", bcv_rate, usd_amount * bcv_rate
+            return "USD", 1.0, usd_amount
+
         if difference > 0 and exchange_in.payment_method:
+            p_curr, p_rate, p_amt = get_payment_details(exchange_in.payment_method, difference)
             payment = Payment(
                 sale_id=sale.id,
                 method=exchange_in.payment_method,
-                amount=difference,
-                currency="USD",
-                exchange_rate=1.0,
+                amount=p_amt,
+                currency=p_curr,
+                exchange_rate=p_rate,
                 amount_usd_equivalent=difference
             )
             db.add(payment)
@@ -158,12 +174,13 @@ class ExchangeController:
             refund_amount = abs(difference)
             method = exchange_in.payment_method or "credit_note"
             if method != "credit_note":
+                p_curr, p_rate, p_amt = get_payment_details(method, refund_amount)
                 payment = Payment(
                     sale_id=sale.id,
                     method=f"Refund_{method}",
-                    amount=refund_amount,
-                    currency="USD",
-                    exchange_rate=1.0,
+                    amount=p_amt,
+                    currency=p_curr,
+                    exchange_rate=p_rate,
                     amount_usd_equivalent=refund_amount
                 )
                 db.add(payment)
@@ -220,6 +237,16 @@ class ExchangeController:
         sale = await db.get(Sale, exchange_obj.sale_id)
         if sale and sale.status == "exchanged":
             sale.status = "completed"
+
+        # Remove exchange payments ONLY if a payment was actually created
+        if exchange_obj.total_difference_usd != 0:
+            payments = await db.execute(
+                select(Payment).where(Payment.sale_id == exchange_obj.sale_id).order_by(Payment.created_at.desc())
+            )
+            all_payments = payments.scalars().all()
+            if all_payments:
+                # Delete the most recent payment (which is the exchange payment)
+                await db.delete(all_payments[0])
 
         await AuditService.log_action(
             db, user_id, "DELETE_EXCHANGE", "sales",

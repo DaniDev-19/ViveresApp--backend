@@ -46,7 +46,7 @@ async def export_sales_report(
                 selectinload(Sale.items).selectinload(SaleItem.product),
                 selectinload(Sale.payments)
             )
-            .where(Sale.status == "completed")
+            .where(Sale.status.in_(["completed", "partially_returned", "exchanged", "returned"]))
             .order_by(Sale.created_at.desc())
         )
         
@@ -59,6 +59,16 @@ async def export_sales_report(
         result = await db.execute(query)
         sales = result.scalars().all()
         print(f"DEBUG: Found {len(sales)} sales to process.")
+
+        from app.models.sale_return import SaleReturn, SaleReturnItem
+        from app.models.sale_exchange import SaleExchange, SaleExchangeItemOut, SaleExchangeItemIn
+        
+        sale_ids = [sale.id for sale in sales]
+        returns = []
+        exchanges = []
+        if sale_ids:
+            returns = (await db.execute(select(SaleReturn).where(SaleReturn.sale_id.in_(sale_ids)).options(selectinload(SaleReturn.items).selectinload(SaleReturnItem.product)))).scalars().all()
+            exchanges = (await db.execute(select(SaleExchange).where(SaleExchange.sale_id.in_(sale_ids)).options(selectinload(SaleExchange.items_out).selectinload(SaleExchangeItemOut.product), selectinload(SaleExchange.items_in).selectinload(SaleExchangeItemIn.product)))).scalars().all()
 
         # 2. Transform Data
         sales_data = []
@@ -85,6 +95,28 @@ async def export_sales_report(
                             qty = item.quantity or 0
                             profit_val += (price - cost) * qty
                 
+                sale_returns = [r for r in returns if r.sale_id == sale.id]
+                sale_exchanges = [e for e in exchanges if e.sale_id == sale.id]
+                
+                net_deduction = 0.0
+                for r in sale_returns:
+                    net_deduction += r.total_refund_usd or 0.0
+                    for r_item in r.items:
+                        cost = r_item.product.cost_price if r_item.product else 0.0
+                        profit_val -= (r_item.unit_price_usd - cost) * r_item.quantity
+                        items_list.append(f"[DEVUELTO] -{r_item.quantity}x {r_item.product_name}")
+                        
+                for ex in sale_exchanges:
+                    net_deduction -= ex.total_difference_usd or 0.0
+                    for item_out in ex.items_out:
+                        cost = item_out.product.cost_price if item_out.product else 0.0
+                        profit_val -= (item_out.unit_price_usd - cost) * item_out.quantity
+                        items_list.append(f"[CAMBIO RET] -{item_out.quantity}x {item_out.product_name}")
+                    for item_in in ex.items_in:
+                        cost = item_in.product.cost_price if item_in.product else 0.0
+                        profit_val += (item_in.unit_price_usd - cost) * item_in.quantity
+                        items_list.append(f"[CAMBIO ENT] +{item_in.quantity}x {item_in.product_name}")
+
                 items_summary = ", ".join(items_list)
                 
                 # Delivery & Tax
@@ -98,7 +130,7 @@ async def export_sales_report(
                     if rates:
                         exchange_rate = max(rates)
                 
-                total_usd = sale.total_amount_usd or 0.0
+                total_usd = (sale.total_amount_usd or 0.0) - net_deduction
                 total_bs = total_usd * exchange_rate
 
                 sales_data.append({
@@ -112,7 +144,7 @@ async def export_sales_report(
                     "profit": profit_val,
                     "total_bs": total_bs,
                     "total": total_usd,
-                    "status": "Completado"
+                    "status": "Completado" if sale.status == "completed" else "Dev. Parcial" if sale.status == "partially_returned" else "Cambiada" if sale.status == "exchanged" else "Devuelta"
                 })
             except Exception as e_inner:
                 print(f"DEBUG: Error processing sale ID {sale.id}: {e_inner}")
@@ -145,8 +177,8 @@ async def export_sales_report(
         return Response(content=f"Error fatal: {str(e)}", status_code=500)
 
 
-@router.get("/returns-exchanges/export")
-async def export_returns_exchanges_report(
+@router.get("/returns/export")
+async def export_returns_report(
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
     format: str = Query("pdf", enum=["pdf", "excel"]),
@@ -195,51 +227,40 @@ async def export_returns_exchanges_report(
         result_exchanges = await db.execute(exchanges_query)
         exchanges = result_exchanges.scalars().all()
 
-        # 3. Transform data
-        returns_data = []
-        total_refund = 0.0
+        # 3. Transform data into unified list
+        combined_data = []
         for r in returns:
-            method_display = {"cash": "Efectivo", "credit_note": "Nota de Crédito", "original": "Método Original"}.get(r.refund_method, r.refund_method)
             items_str = ", ".join([f"{item.product_name} (x{item.quantity})" for item in r.items]) if r.items else "N/A"
-            total_refund += r.total_refund_usd or 0
-            returns_data.append({
+            combined_data.append({
                 "id": r.id,
+                "type": "Devolución",
                 "sale_id": r.sale_id,
                 "date": r.created_at.strftime("%Y-%m-%d %H:%M") if r.created_at else "N/A",
                 "items": items_str,
-                "method": method_display,
-                "credit_note": r.credit_note_code or "-",
+                "amount": r.total_refund_usd or 0.0,
                 "reason": (r.reason or "-")[:40],
-                "total": r.total_refund_usd or 0,
+                "status": "Completada"
             })
 
-        exchanges_data = []
-        total_exchange_diff = 0.0
         for ex in exchanges:
             items_out_str = ", ".join([f"{item.product_name} (x{item.quantity})" for item in ex.items_out]) if ex.items_out else "N/A"
             items_in_str = ", ".join([f"{item.product_name} (x{item.quantity})" for item in ex.items_in]) if ex.items_in else "N/A"
-            total_exchange_diff += ex.total_difference_usd or 0
-            exchanges_data.append({
+            combined_data.append({
                 "id": ex.id,
+                "type": "Cambio",
                 "sale_id": ex.sale_id,
                 "date": ex.created_at.strftime("%Y-%m-%d %H:%M") if ex.created_at else "N/A",
-                "items_out": items_out_str,
-                "items_in": items_in_str,
-                "difference": ex.total_difference_usd or 0,
+                "items": f"Sale: {items_out_str} | Entra: {items_in_str}",
+                "amount": ex.total_difference_usd or 0.0,
                 "reason": (ex.reason or "-")[:40],
+                "status": "Completado"
             })
 
-        date_range_str = f"{start_date or 'Inicio'} - {end_date or 'Hoy'}"
-
-        summary = {
-            "total_returns": len(returns_data),
-            "total_refund_usd": total_refund,
-            "total_exchanges": len(exchanges_data),
-            "total_exchange_diff_usd": total_exchange_diff,
-        }
+        # Sort combined data by date descending
+        combined_data.sort(key=lambda x: x["date"], reverse=True)
 
         if format == "excel":
-            buffer = report_service.generate_returns_exchanges_excel(returns_data, exchanges_data, summary)
+            buffer = report_service.generate_returns_excel(combined_data)
             filename = f"Reporte_Devoluciones_Cambios_{date.today()}.xlsx"
             return Response(
                 content=buffer.getvalue(),
@@ -247,8 +268,7 @@ async def export_returns_exchanges_report(
                 headers={"Content-Disposition": f"attachment; filename={filename}"}
             )
 
-        buffer = report_service.generate_returns_exchanges_pdf(returns_data, exchanges_data, summary, date_range_str)
-
+        buffer = report_service.generate_returns_pdf(combined_data)
         filename = f"Reporte_Devoluciones_Cambios_{date.today()}.pdf"
         return Response(
             content=buffer.getvalue(),
@@ -263,6 +283,7 @@ async def export_returns_exchanges_report(
 @router.get("/inventory/export")
 async def export_inventory_report(
     filter: str = Query("all", enum=["all", "low_stock", "zero_stock"]),
+    provider_id: Optional[int] = Query(None, description="Filtrar inventario por proveedor"),
     format: str = Query("pdf", enum=["pdf", "excel"]),
     type: str = Query("standard", enum=["standard", "code_name", "prices"]),
     db: AsyncSession = Depends(get_db),
@@ -272,15 +293,25 @@ async def export_inventory_report(
     Export inventory report.
     """
     from app.models.product import Product
-    
-    query = select(Product)
+
+    query = select(Product).options(joinedload(Product.provider))
     if filter == "low_stock":
         query = query.where(Product.stock_quantity <= Product.min_stock_level)
     elif filter == "zero_stock":         
         query = query.where(Product.stock_quantity == 0)
+
+    if provider_id is not None:
+        query = query.where(Product.provider_id == provider_id)
     
     result = await db.execute(query)
     products = result.scalars().all()
+
+    provider_name = None
+    if provider_id is not None:
+        provider_name = next(
+            (prod.provider.name for prod in products if prod.provider and prod.provider.id == provider_id),
+            None,
+        )
 
     products_data = []
     for prod in products:
@@ -296,12 +327,12 @@ async def export_inventory_report(
         })
     
     if format == "pdf":
-        buffer = report_service.generate_inventory_pdf(products_data, report_type=type)
+        buffer = report_service.generate_inventory_pdf(products_data, report_type=type, provider_name=provider_name)
         media_type = "application/pdf"
         filename = f"Reporte_Inventario_ViveresApp_{date.today()}.pdf"
         content_disposition = f"inline; filename={filename}"
     else:
-        buffer = report_service.generate_inventory_excel(products_data, report_type=type)
+        buffer = report_service.generate_inventory_excel(products_data, report_type=type, provider_name=provider_name)
         media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         filename = f"Reporte_Inventario_ViveresApp_{date.today()}.xlsx"
         content_disposition = f"attachment; filename={filename}"
@@ -685,10 +716,28 @@ async def get_dashboard_stats(
     query_sales = select(func.count(Sale.id), func.sum(Sale.total_amount_usd)).where(
         Sale.created_at >= start_of_day,
         Sale.created_at <= end_of_day,
-        Sale.status == "completed",
+        Sale.status.in_(["completed", "partially_returned", "exchanged", "returned"]),
     )
     res_sales = await db.execute(query_sales)
     count_sales, total_revenue = res_sales.first()
+
+    from app.models.sale_return import SaleReturn
+    from app.models.sale_exchange import SaleExchange
+
+    # Adjust revenue for returns and exchanges
+    query_refunds = select(func.sum(SaleReturn.total_refund_usd)).where(
+        SaleReturn.created_at >= start_of_day,
+        SaleReturn.created_at <= end_of_day
+    )
+    total_refunds = (await db.execute(query_refunds)).scalar() or 0.0
+
+    query_exchange_diff = select(func.sum(SaleExchange.total_difference_usd)).where(
+        SaleExchange.created_at >= start_of_day,
+        SaleExchange.created_at <= end_of_day
+    )
+    total_exchange_diff = (await db.execute(query_exchange_diff)).scalar() or 0.0
+
+    total_revenue = (total_revenue or 0.0) - total_refunds + total_exchange_diff
 
     # 2. Low Stock Products
     from app.models.product import Product
@@ -699,10 +748,28 @@ async def get_dashboard_stats(
     res_stock = await db.execute(query_stock)
     low_stock_count = res_stock.scalar()
 
-    # 3. Recent Sales (Last 5 completed transactions only)
-    query_recent = select(Sale).where(Sale.status == "completed").order_by(Sale.created_at.desc()).limit(5)
+    # 3. Recent Sales
+    query_recent = select(Sale).where(Sale.status.in_(["completed", "partially_returned", "exchanged", "returned"])).order_by(Sale.created_at.desc()).limit(5)
     res_recent = await db.execute(query_recent)
     recent_sales = res_recent.scalars().all()
+
+    sale_ids = [sale.id for sale in recent_sales]
+    if sale_ids:
+        recent_returns = (await db.execute(select(SaleReturn).where(SaleReturn.sale_id.in_(sale_ids)))).scalars().all()
+        recent_exchanges = (await db.execute(select(SaleExchange).where(SaleExchange.sale_id.in_(sale_ids)))).scalars().all()
+        
+        returns_by_sale = {}
+        for r in recent_returns:
+            returns_by_sale[r.sale_id] = returns_by_sale.get(r.sale_id, 0.0) + (r.total_refund_usd or 0.0)
+            
+        exchanges_by_sale = {}
+        for e in recent_exchanges:
+            exchanges_by_sale[e.sale_id] = exchanges_by_sale.get(e.sale_id, 0.0) + (e.total_difference_usd or 0.0)
+
+        for sale in recent_sales:
+            ref = returns_by_sale.get(sale.id, 0.0)
+            exc = exchanges_by_sale.get(sale.id, 0.0)
+            sale.total_amount_usd = (sale.total_amount_usd or 0.0) - ref + exc
 
     # 4. Total Customers
     from app.models.web_order import Customer
@@ -714,11 +781,17 @@ async def get_dashboard_stats(
     from app.models.sale_return import SaleReturn
     from app.models.sale_exchange import SaleExchange
 
-    query_returns = select(func.count(SaleReturn.id))
+    query_returns = select(func.count(SaleReturn.id)).where(
+        SaleReturn.created_at >= start_of_day,
+        SaleReturn.created_at <= end_of_day
+    )
     res_returns = await db.execute(query_returns)
     total_returns = res_returns.scalar()
 
-    query_exchanges = select(func.count(SaleExchange.id))
+    query_exchanges = select(func.count(SaleExchange.id)).where(
+        SaleExchange.created_at >= start_of_day,
+        SaleExchange.created_at <= end_of_day
+    )
     res_exchanges = await db.execute(query_exchanges)
     total_exchanges = res_exchanges.scalar()
 
@@ -752,7 +825,7 @@ async def get_sales_chart(
             cast(Sale.created_at, Date).label("date"),
             func.sum(Sale.total_amount_usd).label("total"),
         )
-        .where(Sale.created_at >= start_date, Sale.status == "completed")
+        .where(Sale.created_at >= start_date, Sale.status.in_(["completed", "partially_returned", "exchanged", "returned"]))
         .group_by(cast(Sale.created_at, Date))
         .order_by(cast(Sale.created_at, Date))
     )
@@ -950,7 +1023,7 @@ async def get_annual_growth(
             func.sum(func.coalesce(profit_subquery.c.sale_profit, 0)).label("total_profit")
         )
         .outerjoin(profit_subquery, profit_subquery.c.sale_id == Sale.id)
-        .where(Sale.status == "completed")
+        .where(Sale.status.in_(["completed", "partially_returned", "exchanged", "returned"]))
         .group_by(func.extract('year', Sale.created_at))
         .order_by("year")
     )
@@ -958,11 +1031,24 @@ async def get_annual_growth(
     result = await db.execute(query)
     sales_by_year = result.all()
     
+    from app.models.sale_return import SaleReturn
+    from app.models.sale_exchange import SaleExchange
+    
+    returns_query = select(func.extract('year', SaleReturn.created_at).label("year"), func.sum(SaleReturn.total_refund_usd).label("total_refund")).group_by(func.extract('year', SaleReturn.created_at))
+    returns_res = await db.execute(returns_query)
+    returns_by_year = {int(r.year): float(r.total_refund or 0) for r in returns_res.all()}
+    
+    exchanges_query = select(func.extract('year', SaleExchange.created_at).label("year"), func.sum(SaleExchange.total_difference_usd).label("total_diff")).group_by(func.extract('year', SaleExchange.created_at))
+    exchanges_res = await db.execute(exchanges_query)
+    exchanges_by_year = {int(r.year): float(r.total_diff or 0) for r in exchanges_res.all()}
+    
     growth_data = []
     for row in sales_by_year:
         year = int(row.year)
         total_usd = float(row.total_usd or 0)
         total_profit = float(row.total_profit or 0)
+        
+        total_usd = total_usd - returns_by_year.get(year, 0.0) + exchanges_by_year.get(year, 0.0)
         
         growth_data.append({
             "year": year,
@@ -1008,7 +1094,7 @@ async def get_monthly_growth(
         )
         .outerjoin(profit_subquery, profit_subquery.c.sale_id == Sale.id)
         .where(
-            Sale.status == "completed",
+            Sale.status.in_(["completed", "partially_returned", "exchanged", "returned"]),
             func.extract('year', Sale.created_at) == year
         )
         .group_by(func.extract('month', Sale.created_at))
@@ -1017,6 +1103,17 @@ async def get_monthly_growth(
     
     result = await db.execute(query)
     sales_by_month = result.all()
+    
+    from app.models.sale_return import SaleReturn
+    from app.models.sale_exchange import SaleExchange
+    
+    returns_query = select(func.extract('month', SaleReturn.created_at).label("month"), func.sum(SaleReturn.total_refund_usd).label("total_refund")).where(func.extract('year', SaleReturn.created_at) == year).group_by(func.extract('month', SaleReturn.created_at))
+    returns_res = await db.execute(returns_query)
+    returns_by_month = {int(r.month): float(r.total_refund or 0) for r in returns_res.all()}
+    
+    exchanges_query = select(func.extract('month', SaleExchange.created_at).label("month"), func.sum(SaleExchange.total_difference_usd).label("total_diff")).where(func.extract('year', SaleExchange.created_at) == year).group_by(func.extract('month', SaleExchange.created_at))
+    exchanges_res = await db.execute(exchanges_query)
+    exchanges_by_month = {int(r.month): float(r.total_diff or 0) for r in exchanges_res.all()}
     
     from app.services.currency import currency_service
     rates = await currency_service.get_latest_rates(db)
@@ -1040,6 +1137,8 @@ async def get_monthly_growth(
         row = sales_map.get(m)
         total_usd = float(row.total_usd or 0) if row else 0.0
         total_profit = float(row.total_profit or 0) if row else 0.0
+        
+        total_usd = total_usd - returns_by_month.get(m, 0.0) + exchanges_by_month.get(m, 0.0)
         
         monthly_data.append({
             "month_num": m,
@@ -1261,23 +1360,44 @@ async def export_cash_close_report(
         .where(
             Sale.created_at >= start_of_day,
             Sale.created_at <= end_of_day,
-            Sale.status == "completed"
+            Sale.status.in_(["completed", "partially_returned", "exchanged", "returned"])
         )
     )
     res = await db.execute(stmt)
     sales = res.scalars().all()
 
     total_sales_count = len(sales)
-    total_revenue_usd = sum(s.total_amount_usd for s in sales)
-    total_tax_usd = sum(s.tax_amount_usd for s in sales)
+    total_revenue_usd = sum((s.total_amount_usd or 0.0) for s in sales)
+    total_tax_usd = sum((s.total_tax_usd or 0.0) for s in sales)
     
     total_profit_usd = 0.0
     for s in sales:
         sale_profit = 0.0
         for item in s.items:
             cost = item.product.cost_price if item.product else 0.0
-            sale_profit += (item.price_usd - cost) * item.quantity
+            sale_profit += (item.unit_price_usd - cost) * item.quantity
         total_profit_usd += sale_profit
+
+    from app.models.sale_return import SaleReturn, SaleReturnItem
+    from app.models.sale_exchange import SaleExchange, SaleExchangeItemOut, SaleExchangeItemIn
+
+    # Adjust revenue and profit for returns and exchanges
+    returns_stmt = select(SaleReturn).where(SaleReturn.created_at >= start_of_day, SaleReturn.created_at <= end_of_day).options(selectinload(SaleReturn.items).selectinload(SaleReturnItem.product))
+    for r in (await db.execute(returns_stmt)).scalars().all():
+        total_revenue_usd -= (r.total_refund_usd or 0.0)
+        for r_item in r.items:
+            cost = r_item.product.cost_price if r_item.product else 0.0
+            total_profit_usd -= (r_item.unit_price_usd - cost) * r_item.quantity
+
+    ex_stmt = select(SaleExchange).where(SaleExchange.created_at >= start_of_day, SaleExchange.created_at <= end_of_day).options(selectinload(SaleExchange.items_out).selectinload(SaleExchangeItemOut.product), selectinload(SaleExchange.items_in).selectinload(SaleExchangeItemIn.product))
+    for ex in (await db.execute(ex_stmt)).scalars().all():
+        total_revenue_usd += (ex.total_difference_usd or 0.0)
+        for item_out in ex.items_out:
+            cost = item_out.product.cost_price if item_out.product else 0.0
+            total_profit_usd -= (item_out.unit_price_usd - cost) * item_out.quantity
+        for item_in in ex.items_in:
+            cost = item_in.product.cost_price if item_in.product else 0.0
+            total_profit_usd += (item_in.unit_price_usd - cost) * item_in.quantity
 
     payment_methods_info = {
         "efectivo_usd": {"name": "Efectivo (USD)", "count": 0, "amount": 0.0, "amount_usd": 0.0, "currency": "USD"},
@@ -1292,7 +1412,13 @@ async def export_cash_close_report(
 
     for s in sales:
         for p in s.payments:
-            method_key = p.method.lower()
+            is_refund = False
+            method_str = p.method
+            if method_str.startswith("Refund_"):
+                is_refund = True
+                method_str = method_str.replace("Refund_", "")
+
+            method_key = method_str.lower()
             if "efectivo" in method_key:
                 if p.currency.upper() == "USD":
                     key = "efectivo_usd"
@@ -1314,29 +1440,37 @@ async def export_cash_close_report(
                 key = None
             
             if key and key in payment_methods_info:
-                payment_methods_info[key]["count"] += 1
-                payment_methods_info[key]["amount"] += p.amount
-                payment_methods_info[key]["amount_usd"] += p.amount_usd_equivalent
+                if is_refund:
+                    payment_methods_info[key]["amount"] -= p.amount
+                    payment_methods_info[key]["amount_usd"] -= p.amount_usd_equivalent
+                else:
+                    payment_methods_info[key]["count"] += 1
+                    payment_methods_info[key]["amount"] += p.amount
+                    payment_methods_info[key]["amount_usd"] += p.amount_usd_equivalent
             elif key is None:
-                dyn_key = p.method
+                dyn_key = method_str
                 if dyn_key not in payment_methods_info:
                     payment_methods_info[dyn_key] = {
-                        "name": p.method.capitalize(),
+                        "name": method_str.capitalize(),
                         "count": 0,
                         "amount": 0.0,
                         "amount_usd": 0.0,
                         "currency": p.currency.upper()
                     }
-                payment_methods_info[dyn_key]["count"] += 1
-                payment_methods_info[dyn_key]["amount"] += p.amount
-                payment_methods_info[dyn_key]["amount_usd"] += p.amount_usd_equivalent
+                if is_refund:
+                    payment_methods_info[dyn_key]["amount"] -= p.amount
+                    payment_methods_info[dyn_key]["amount_usd"] -= p.amount_usd_equivalent
+                else:
+                    payment_methods_info[dyn_key]["count"] += 1
+                    payment_methods_info[dyn_key]["amount"] += p.amount
+                    payment_methods_info[dyn_key]["amount_usd"] += p.amount_usd_equivalent
 
     cash_data = {
         "total_sales_count": total_sales_count,
         "total_revenue_usd": total_revenue_usd,
         "total_tax_usd": total_tax_usd,
         "total_profit_usd": total_profit_usd,
-        "payment_breakdown": [val for val in payment_methods_info.values() if val["count"] > 0 or val["amount"] > 0]
+        "payment_breakdown": [val for val in payment_methods_info.values() if val["count"] > 0 or val["amount"] != 0]
     }
 
     date_label = target_date.strftime("%d/%m/%Y")
@@ -1619,6 +1753,152 @@ async def export_profitability_report(
             headers={"Content-Disposition": f"inline; filename={filename}"}
         )
 
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return Response(content=f"Error fatal: {str(e)}", status_code=500)
+
+@router.get("/returns/export")
+async def export_returns_report(
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    format: str = Query("pdf", enum=["pdf", "excel"]),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(deps.verify_roles([UserRole.ADMIN])),
+):
+    try:
+        from app.models.sale_return import SaleReturn
+        from app.models.sale_exchange import SaleExchange
+        from sqlalchemy.orm import selectinload
+        from datetime import time
+
+        returns_query = select(SaleReturn).options(selectinload(SaleReturn.items)).order_by(SaleReturn.created_at.desc())
+        exchanges_query = select(SaleExchange).options(selectinload(SaleExchange.items_in), selectinload(SaleExchange.items_out)).order_by(SaleExchange.created_at.desc())
+
+        if start_date:
+            dt_start = datetime.combine(start_date, time.min)
+            returns_query = returns_query.where(SaleReturn.created_at >= dt_start)
+            exchanges_query = exchanges_query.where(SaleExchange.created_at >= dt_start)
+        
+        if end_date:
+            dt_end = datetime.combine(end_date, time.max)
+            returns_query = returns_query.where(SaleReturn.created_at <= dt_end)
+            exchanges_query = exchanges_query.where(SaleExchange.created_at <= dt_end)
+
+        returns_res = await db.execute(returns_query)
+        exchanges_res = await db.execute(exchanges_query)
+
+        returns = returns_res.scalars().all()
+        exchanges = exchanges_res.scalars().all()
+
+        returns_data = []
+        for r in returns:
+            items_str = ", ".join([f"{i.product_name} x{i.quantity}" for i in r.items])
+            returns_data.append({
+                "id": r.id,
+                "type": "Devolución",
+                "date": r.created_at.strftime("%d/%m/%Y %H:%M") if r.created_at else "-",
+                "sale_id": r.sale_id,
+                "items": items_str,
+                "amount": -r.total_refund_usd,
+                "reason": r.reason or "Sin razón",
+                "status": r.status,
+                "created_at": r.created_at
+            })
+
+        for e in exchanges:
+            out_str = ", ".join([f"{i.product_name} x{i.quantity}" for i in e.items_out])
+            in_str = ", ".join([f"{i.product_name} x{i.quantity}" for i in e.items_in])
+            items_str = f"Devuelto: [{out_str}] -> Llevado: [{in_str}]"
+            returns_data.append({
+                "id": e.id,
+                "type": "Cambio",
+                "date": e.created_at.strftime("%d/%m/%Y %H:%M") if e.created_at else "-",
+                "sale_id": e.sale_id,
+                "items": items_str,
+                "amount": e.total_difference_usd,
+                "reason": e.reason or "Sin razón",
+                "status": e.status,
+                "created_at": e.created_at
+            })
+
+        # Sort by date descending
+        returns_data.sort(key=lambda x: x["created_at"], reverse=True)
+
+        if format == "excel":
+            buffer = report_service.generate_returns_excel(returns_data)
+            filename = f"Reporte_Devoluciones_{date.today()}.xlsx"
+            return Response(
+                content=buffer.getvalue(),
+                media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                headers={"Content-Disposition": f"attachment; filename={filename}"}
+            )
+        
+        buffer = report_service.generate_returns_pdf(returns_data)
+        filename = f"Reporte_Devoluciones_{date.today()}.pdf"
+        return Response(
+            content=buffer.getvalue(),
+            media_type="application/pdf",
+            headers={"Content-Disposition": f"inline; filename={filename}"}
+        )
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return Response(content=f"Error fatal: {str(e)}", status_code=500)
+
+@router.get("/web-orders/export")
+async def export_web_orders_report(
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    format: str = Query("pdf", enum=["pdf", "excel"]),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(deps.verify_roles([UserRole.ADMIN])),
+):
+    try:
+        from app.models.web_order import WebOrder
+        from datetime import time
+
+        query = select(WebOrder).order_by(WebOrder.created_at.desc())
+
+        if start_date:
+            dt_start = datetime.combine(start_date, time.min)
+            query = query.where(WebOrder.created_at >= dt_start)
+        if end_date:
+            dt_end = datetime.combine(end_date, time.max)
+            query = query.where(WebOrder.created_at <= dt_end)
+
+        result = await db.execute(query)
+        orders = result.scalars().all()
+
+        orders_data = []
+        for o in orders:
+            cust_data = o.customer_data or {}
+            orders_data.append({
+                "id": o.id,
+                "date": o.created_at.strftime("%d/%m/%Y %H:%M") if o.created_at else "-",
+                "customer": cust_data.get("name", "Desconocido"),
+                "phone": cust_data.get("phone", ""),
+                "payment": o.payment_method or "N/A",
+                "total": o.total_estimated_usd,
+                "status": o.status
+            })
+
+        if format == "excel":
+            buffer = report_service.generate_web_orders_excel(orders_data)
+            filename = f"Reporte_Pedidos_Web_{date.today()}.xlsx"
+            return Response(
+                content=buffer.getvalue(),
+                media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                headers={"Content-Disposition": f"attachment; filename={filename}"}
+            )
+        
+        buffer = report_service.generate_web_orders_pdf(orders_data)
+        filename = f"Reporte_Pedidos_Web_{date.today()}.pdf"
+        return Response(
+            content=buffer.getvalue(),
+            media_type="application/pdf",
+            headers={"Content-Disposition": f"inline; filename={filename}"}
+        )
     except Exception as e:
         import traceback
         traceback.print_exc()

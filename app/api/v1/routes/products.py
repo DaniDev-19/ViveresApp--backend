@@ -15,7 +15,10 @@ async def get_products(
     limit: int = 100,
     search: Optional[str] = None,
     category_id: Optional[int] = None,
+    provider_id: Optional[int] = None,
     in_stock_only: bool = False,
+    stock_eq: int | None = None,
+    stock_lt: int | None = None,
     current_user: User = Depends(deps.verify_roles([UserRole.ADMIN, UserRole.WORKER, UserRole.INVENTORY_MANAGER])),
 ):
     return await ProductController.get_multi(
@@ -24,7 +27,10 @@ async def get_products(
         limit=limit,
         search=search,
         category_id=category_id,
+        provider_id=provider_id,
         in_stock_only=in_stock_only,
+        stock_eq=stock_eq,
+        stock_lt=stock_lt,
     )
 
 @router.get("/public", response_model=List[ProductResponse])

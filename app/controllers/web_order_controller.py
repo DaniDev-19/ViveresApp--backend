@@ -149,12 +149,28 @@ class WebOrderController:
                 db.add(sale_item)
 
             # Registrar el pago
+            from app.services.currency import currency_service
+            rates = await currency_service.get_latest_rates(db)
+            bcv_rate = 40.0
+            for r in rates:
+                if r.currency == "BCV":
+                    bcv_rate = r.rate
+                    break
+                    
+            def get_web_payment_details(method_name: str, usd_amount: float):
+                method_lower = (method_name or "").lower()
+                if "pago" in method_lower or "movil" in method_lower or "punto" in method_lower or "bs" in method_lower or "ves" in method_lower:
+                    return "VES", bcv_rate, usd_amount * bcv_rate
+                return "USD", 1.0, usd_amount
+                
+            p_curr, p_rate, p_amt = get_web_payment_details(order.payment_method, final_total_usd)
+
             payment = PaymentModel(
                 sale_id=new_sale.id,
                 method=order.payment_method or "Other",
-                amount=final_total_usd,
-                currency="USD",
-                exchange_rate=1.0,
+                amount=p_amt,
+                currency=p_curr,
+                exchange_rate=p_rate,
                 amount_usd_equivalent=final_total_usd
             )
             db.add(payment)
@@ -162,8 +178,27 @@ class WebOrderController:
             # Guardar vínculo
             order.sale_id = new_sale.id
 
+        elif status in ("cancelled", "rejected") and order.sale_id:
+            from app.controllers.sale_controller import SaleController
+            await SaleController.delete(db, order.sale_id, user_id)
+            order.sale_id = None
+
         order.status = status
         db.add(order)
         await db.commit()
         await AuditService.log_action(db, user_id, "UPDATE_STATUS", "web_orders", f"Pedido {order.id} cambió a {status}")
         return order
+
+    @staticmethod
+    async def delete(db: AsyncSession, order_id: int, user_id: int):
+        from sqlalchemy import delete
+        result = await db.execute(select(WebOrder).where(WebOrder.id == order_id))
+        order = result.scalars().first()
+        if not order:
+            return False
+            
+        await db.execute(delete(WebOrderItem).where(WebOrderItem.web_order_id == order.id))
+        await db.delete(order)
+        await db.commit()
+        await AuditService.log_action(db, user_id, "DELETE", "web_orders", f"Pedido {order.id} eliminado")
+        return True

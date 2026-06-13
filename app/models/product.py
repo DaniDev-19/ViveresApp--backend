@@ -22,6 +22,9 @@ class Product(Base):
     category_id = Column(Integer, ForeignKey("categories.id"), nullable=True)
     category = relationship("app.models.category.Category", back_populates="products")
 
+    provider_id = Column(Integer, ForeignKey("providers.id"), nullable=True, index=True)
+    provider = relationship("app.models.provider.Provider", back_populates="products")
+
     image_url = Column(String, nullable=True)
     is_public = Column(Boolean, default=True)  # Visible en catálogo web
     apply_iva_web = Column(Boolean, default=True)  # Si aplica IVA en pedidos web

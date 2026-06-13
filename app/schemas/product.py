@@ -13,6 +13,7 @@ class ProductBase(BaseModel):
     stock_quantity: int = Field(0, ge=0)
     min_stock_level: int = Field(5, ge=0)
     category_id: Optional[int] = None
+    provider_id: Optional[int] = None
     offer_price_usd: Optional[float] = None
     image_url: Optional[str] = None
     is_public: bool = True
@@ -33,6 +34,7 @@ class ProductUpdate(BaseModel):
     stock_quantity: Optional[int] = Field(None, ge=0)
     min_stock_level: Optional[int] = Field(None, ge=0)
     category_id: Optional[int] = None
+    provider_id: Optional[int] = None
     offer_price_usd: Optional[float] = None
 
     @field_validator("cost_price")
@@ -62,6 +64,7 @@ class ProductUpdate(BaseModel):
 class ProductResponse(ProductBase):
     id: int
     price_usd: float
+    provider_id: Optional[int] = None
     category: Optional[CategoryResponse] = None
 
     class Config:

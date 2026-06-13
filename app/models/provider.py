@@ -12,3 +12,4 @@ class Provider(Base):
     is_delivery = Column(Boolean, default=False, nullable=False)
 
     orders = relationship("PurchaseOrder", back_populates="provider")
+    products = relationship("app.models.product.Product", back_populates="provider")

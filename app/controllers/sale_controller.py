@@ -52,8 +52,31 @@ class SaleController:
         result = await db.execute(stmt.offset(skip).limit(limit))
         sales = result.scalars().all()
         
+        # Fetch returns and exchanges to calculate Net total
+        from app.models.sale_return import SaleReturn
+        from app.models.sale_exchange import SaleExchange
+        
+        sale_ids = [sale.id for sale in sales]
+        if sale_ids:
+            returns = (await db.execute(select(SaleReturn).where(SaleReturn.sale_id.in_(sale_ids)))).scalars().all()
+            exchanges = (await db.execute(select(SaleExchange).where(SaleExchange.sale_id.in_(sale_ids)))).scalars().all()
+            
+            returns_by_sale = {}
+            for r in returns:
+                returns_by_sale[r.sale_id] = returns_by_sale.get(r.sale_id, 0.0) + (r.total_refund_usd or 0.0)
+                
+            exchanges_by_sale = {}
+            for e in exchanges:
+                exchanges_by_sale[e.sale_id] = exchanges_by_sale.get(e.sale_id, 0.0) + (e.total_difference_usd or 0.0)
+
         # Inyección de datos extras en caliente para el Frontend
         for sale in sales:
+            sale.net_amount_usd = sale.total_amount_usd or 0.0
+            if sale_ids:
+                ref = returns_by_sale.get(sale.id, 0.0)
+                exc = exchanges_by_sale.get(sale.id, 0.0)
+                sale.net_amount_usd = (sale.total_amount_usd or 0.0) - ref + exc
+
             if sale.customer:
                 sale.customer_name = sale.customer.name
                 sale.customer_phone = sale.customer.phone
@@ -172,13 +195,28 @@ class SaleController:
         start_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         start_year = now.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
 
+        from app.models.sale_return import SaleReturn
+        from app.models.sale_exchange import SaleExchange
+
         async def get_total(start_date):
             stmt = select(func.sum(Sale.total_amount_usd)).where(
                 Sale.created_at >= start_date,
-                Sale.status == "completed"
+                Sale.status.in_(["completed", "partially_returned", "exchanged", "returned"])
             )
             res = await db.execute(stmt)
-            return res.scalar() or 0.0
+            total_sales = res.scalar() or 0.0
+
+            ref_stmt = select(func.sum(SaleReturn.total_refund_usd)).where(
+                SaleReturn.created_at >= start_date
+            )
+            total_refunds = (await db.execute(ref_stmt)).scalar() or 0.0
+
+            ex_stmt = select(func.sum(SaleExchange.total_difference_usd)).where(
+                SaleExchange.created_at >= start_date
+            )
+            total_exchange = (await db.execute(ex_stmt)).scalar() or 0.0
+
+            return total_sales - total_refunds + total_exchange
 
         return {
             "today": await get_total(start_day),

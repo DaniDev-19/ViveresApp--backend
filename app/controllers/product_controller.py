@@ -16,7 +16,10 @@ class ProductController:
         search: str = None,
         public_only: bool = False,
         category_id: Optional[int] = None,
+        provider_id: Optional[int] = None,
         in_stock_only: bool = False,
+        stock_eq: Optional[int] = None,
+        stock_lt: Optional[int] = None,
     ):
         query = select(Product).options(selectinload(Product.category))
         
@@ -52,8 +55,14 @@ class ProductController:
             query = query.where(Product.is_public == True)
         if category_id is not None:
             query = query.where(Product.category_id == category_id)
+        if provider_id is not None:
+            query = query.where(Product.provider_id == provider_id)
         if in_stock_only:
             query = query.where(Product.stock_quantity > 0)
+        if stock_eq is not None:
+            query = query.where(Product.stock_quantity == stock_eq)
+        if stock_lt is not None:
+            query = query.where(Product.stock_quantity < stock_lt)
 
         query = query.order_by(Product.name.asc())
         result = await db.execute(query.offset(skip).limit(limit))
