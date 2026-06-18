@@ -28,6 +28,7 @@ router = APIRouter()
 async def export_sales_report(
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
+    payment_method: Optional[str] = Query(None, description="Filtrar por método de pago"),
     format: str = Query("pdf", enum=["pdf", "excel"]),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(deps.verify_roles([UserRole.ADMIN])),
@@ -35,7 +36,7 @@ async def export_sales_report(
     """
     Export detailed sales report.
     """
-    print(f">>> REQUEST RECEIVED: /sales/export format={format}")
+    print(f">>> REQUEST RECEIVED: /sales/export format={format} payment_method={payment_method}")
     try:
         # 1. Build Query
         query = (
@@ -54,6 +55,8 @@ async def export_sales_report(
              query = query.where(func.date(Sale.created_at) >= start_date)
         if end_date:
              query = query.where(func.date(Sale.created_at) <= end_date)
+        if payment_method:
+             query = query.join(Sale.payments).where(Payment.method == payment_method).distinct()
 
         print("DEBUG: Executing database query...")
         result = await db.execute(query)

@@ -52,6 +52,13 @@ class ReportService:
         sum_bs = 0
         sum_usd = 0
 
+        cell_style = ParagraphStyle(
+            'TableCell',
+            parent=getSampleStyleSheet()['Normal'],
+            fontSize=9,
+            alignment=TA_CENTER
+        )
+
         for sale in sales_data:
             d = sale.get("delivery", 0)
             t = sale.get("tax", 0)
@@ -62,7 +69,7 @@ class ReportService:
             data.append([
                 str(sale.get("id", "")),
                 sale.get("date", ""),
-                sale.get("customer", "Cliente Casual")[:15],
+                Paragraph(sale.get("customer", "Cliente Casual"), cell_style),
                 f"${d:.2f}",
                 f"${t:.2f}",
                 f"${p:.2f}",
@@ -277,7 +284,7 @@ class ReportService:
 
         t = Table([headers] + rows, colWidths=col_widths)
         t.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#EF4444')),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#4F46E5')),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
             ('ALIGN', (3, 1), (3, -1), 'RIGHT'), # Monto right
@@ -362,13 +369,20 @@ class ReportService:
         headers = ["Fecha", "ID", "Cliente", "Pago", "Total", "Estado"]
         col_widths = [80, 40, 150, 100, 80, 100]
         
+        cell_style = ParagraphStyle(
+            'TableCell',
+            parent=getSampleStyleSheet()['Normal'],
+            fontSize=9,
+            alignment=TA_CENTER
+        )
+
         rows = []
         for o in orders_data:
             amount_str = f"${o.get('total', 0):,.2f}"
             rows.append([
                 o.get("date", "")[:10],
                 f"#{o.get('id', '')}",
-                o.get("customer", "")[:30],
+                Paragraph(o.get("customer", ""), cell_style),
                 o.get("payment", ""),
                 amount_str,
                 o.get("status", "")
@@ -376,7 +390,7 @@ class ReportService:
 
         t = Table([headers] + rows, colWidths=col_widths)
         t.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#3B82F6')),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#4F46E5')),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
             ('ALIGN', (4, 1), (4, -1), 'RIGHT'),
@@ -431,18 +445,25 @@ class ReportService:
         data = [headers]
         total_value = 0
 
+        cell_style = ParagraphStyle(
+            'TableCell',
+            parent=getSampleStyleSheet()['Normal'],
+            fontSize=9,
+            alignment=TA_CENTER
+        )
+
         for prod in products_data:
             if report_type == "code_name":
                 data.append([
                     prod.get("barcode", "N/A"),
-                    prod.get("name", "Producto")[:50]
+                    Paragraph(prod.get("name", "Producto"), cell_style)
                 ])
             elif report_type == "prices":
                 off_price = prod.get("offer_price", 0.0)
                 off_price_str = f"${off_price:.2f}" if off_price > 0 else "-"
                 data.append([
                     prod.get("barcode", "N/A"),
-                    prod.get("name", "Producto")[:35],
+                    Paragraph(prod.get("name", "Producto"), cell_style),
                     off_price_str,
                     f"${prod.get('price', 0):.2f}"
                 ])
@@ -451,7 +472,7 @@ class ReportService:
                 data.append([
                     str(prod.get("id", "")),
                     prod.get("barcode", "N/A")[:15],
-                    prod.get("name", "Producto")[:30],
+                    Paragraph(prod.get("name", "Producto"), cell_style),
                     str(prod.get("stock", 0)),
                     f"${prod.get('price', 0):.2f}",
                     f"${val:.2f}"
@@ -460,7 +481,7 @@ class ReportService:
 
         t = Table(data, colWidths=col_widths)
         t.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#10B981')), 
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#4F46E5')), 
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
@@ -719,11 +740,18 @@ class ReportService:
             keepWithNext=True
         )
         
+        cell_style = ParagraphStyle(
+            'TableCell',
+            parent=getSampleStyleSheet()['Normal'],
+            fontSize=9,
+            alignment=TA_CENTER
+        )
+
         def make_table(headers, rows, col_widths, bg_color):
             table_data = [headers] + rows
             t = Table(table_data, colWidths=col_widths)
             t.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor(bg_color)),
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#4F46E5')),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
                 ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
                 ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
@@ -743,7 +771,7 @@ class ReportService:
         elements.append(Paragraph("Líderes de Ventas (Usuarios / Cajeros)", section_style))
         users_headers = ["ID", "Usuario", "Transacciones", "Total Generado ($)"]
         users_rows = [
-            [str(u.get("id", "")), u.get("username", ""), str(u.get("transactions", 0)), f"${u.get('total_amount', 0.0):,.2f}"]
+            [str(u.get("id", "")), Paragraph(u.get("username", ""), cell_style), str(u.get("transactions", 0)), f"${u.get('total_amount', 0.0):,.2f}"]
             for u in rankings_data.get("top_users", [])
         ]
         if not users_rows:
@@ -755,7 +783,7 @@ class ReportService:
         elements.append(Paragraph("Top 10 Productos Más Vendidos (Unidades)", section_style))
         prod_headers = ["ID Producto", "Nombre del Producto", "Unidades Vendidas"]
         prod_rows = [
-            [str(p.get("id", "")), p.get("name", ""), f"{p.get('value', 0):,.0f} uds"]
+            [str(p.get("id", "")), Paragraph(p.get("name", ""), cell_style), f"{p.get('value', 0):,.0f} uds"]
             for p in rankings_data.get("top_products", [])
         ]
         if not prod_rows:
@@ -767,7 +795,7 @@ class ReportService:
         elements.append(Paragraph("Productos de Baja Rotación (Menos Vendidos)", section_style))
         low_prod_headers = ["ID Producto", "Nombre del Producto", "Unidades Vendidas"]
         low_prod_rows = [
-            [str(p.get("id", "")), p.get("name", ""), f"{p.get('value', 0):,.0f} uds"]
+            [str(p.get("id", "")), Paragraph(p.get("name", ""), cell_style), f"{p.get('value', 0):,.0f} uds"]
             for p in rankings_data.get("low_products", [])
         ]
         if not low_prod_rows:
@@ -779,7 +807,7 @@ class ReportService:
         elements.append(Paragraph("Ranking de Mejores Clientes (Mayor Compra)", section_style))
         cust_headers = ["ID Cliente", "Nombre", "Total Pedidos", "Total Gastado ($)"]
         cust_rows = [
-            [str(c.get("id", "")), c.get("name", ""), str(c.get("orders", 0)), f"${c.get('amount', 0.0):,.2f}"]
+            [str(c.get("id", "")), Paragraph(c.get("name", ""), cell_style), str(c.get("orders", 0)), f"${c.get('amount', 0.0):,.2f}"]
             for c in rankings_data.get("top_customers", [])
         ]
         if not cust_rows:
@@ -791,7 +819,7 @@ class ReportService:
         elements.append(Paragraph("Desempeño de Proveedores", section_style))
         prov_headers = ["Proveedor", "Órdenes Totales", "Órdenes Completadas", "Fiabilidad"]
         prov_rows = [
-            [p.get("name", ""), str(p.get("total_orders", 0)), str(p.get("completed_orders", 0)), f"{p.get('reliability', 0.0):.1f}%"]
+            [Paragraph(p.get("name", ""), cell_style), str(p.get("total_orders", 0)), str(p.get("completed_orders", 0)), f"{p.get('reliability', 0.0):.1f}%"]
             for p in rankings_data.get("top_providers", [])
         ]
         if not prov_rows:

@@ -7,6 +7,7 @@ from .payment import PaymentCreate, PaymentResponse
 class SaleBase(BaseModel):
     has_delivery: bool = False
     delivery_amount_usd: float = 0.0
+    charge_binance_tax: bool = False
     customer_id: int
     
     @field_validator('customer_id')

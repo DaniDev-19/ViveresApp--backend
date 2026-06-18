@@ -16,7 +16,8 @@ class SaleController:
         limit: int = 100, 
         search: str = None, 
         only_today: bool = False,
-        date_filter: Optional[str] = None  # <-- NUEVO: Parámetro opcional para recibir "YYYY-MM-DD"
+        date_filter: Optional[str] = None,  # <-- NUEVO: Parámetro opcional para recibir "YYYY-MM-DD"
+        payment_method: Optional[str] = None
     ):
         from sqlalchemy.orm import selectinload
         
@@ -48,6 +49,10 @@ class SaleController:
         elif only_today:
             start_day = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
             stmt = stmt.where(Sale.created_at >= start_day)
+        
+        # 4. Filtro por método de pago
+        if payment_method:
+            stmt = stmt.join(Sale.payments).where(Payment.method == payment_method).distinct()
         
         result = await db.execute(stmt.offset(skip).limit(limit))
         sales = result.scalars().all()
@@ -93,8 +98,13 @@ class SaleController:
         if not sale_in.customer_id:
             raise ValueError("Debe seleccionar un cliente para crear la venta")
         
-        #  VALIDACIÓN: Detectar si es una venta pagada con dólares en efectivo
-        is_efectivo_usd = any(p.method == "Efectivo_USD" for p in sale_in.payments)
+        #  VALIDACIÓN: Detectar si es una venta pagada con dólares (Efectivo_USD, Zelle, Paypal, Zinli)
+        # O si es Binance y no se seleccionó cobrar IVA
+        is_efectivo_usd = any(
+            p.method in ["Efectivo_USD", "Zelle", "Paypal", "Zinli"] or 
+            (p.method == "Binance" and not sale_in.charge_binance_tax) 
+            for p in sale_in.payments
+        )
         
         subtotal_usd = 0.0
         total_tax_usd = 0.0

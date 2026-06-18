@@ -27,6 +27,7 @@ async def get_sales(
     search: Optional[str] = None,
     only_today: bool = False,
     date_filter: Optional[str] = None,
+    payment_method: Optional[str] = None,
     current_user: User = Depends(deps.verify_roles([UserRole.ADMIN, UserRole.WORKER, UserRole.INVENTORY_MANAGER])),
 ):
     return await SaleController.get_multi(
@@ -35,7 +36,8 @@ async def get_sales(
         limit=limit,
         search=search,
         only_today=only_today,
-        date_filter=date_filter
+        date_filter=date_filter,
+        payment_method=payment_method
     )
 
 @router.post("/", response_model=SaleResponse, status_code=status.HTTP_201_CREATED)
@@ -48,8 +50,10 @@ async def create_sale(
     try:
         return await SaleController.create(db, sale_in=sale_in, user_id=current_user.id)
     except ValueError as e:
+        print(f"DEBUG: ValueError in create_sale: {e}")
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
+        print(f"DEBUG: Exception in create_sale: {e}")
         raise HTTPException(status_code=500, detail="Error al procesar la venta")
 
 @router.get("/{sale_id}", response_model=SaleResponse)
