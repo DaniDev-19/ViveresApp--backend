@@ -56,3 +56,39 @@ async def delete_purchase_order(
         )
     return {"message": "Orden eliminada", "id": order_id}
 
+from sqlalchemy import select
+from app.models.purchase_item import PurchaseItem
+from app.models.product import Product
+from pydantic import BaseModel
+
+class LinkProductIn(BaseModel):
+    product_id: int
+
+@router.put("/items/{item_id}/link")
+async def link_purchase_item_to_product(
+    item_id: int,
+    link_in: LinkProductIn,
+    db: AsyncSession = Depends(deps.get_db),
+    current_user: User = Depends(deps.verify_roles([UserRole.ADMIN, UserRole.INVENTORY_MANAGER])),
+):
+    stmt = select(PurchaseItem).where(PurchaseItem.id == item_id)
+    result = await db.execute(stmt)
+    item = result.scalar_one_or_none()
+    if not item:
+        raise HTTPException(status_code=404, detail="Item de orden de compra no encontrado")
+        
+    prod_stmt = select(Product).where(Product.id == link_in.product_id)
+    prod_result = await db.execute(prod_stmt)
+    product = prod_result.scalar_one_or_none()
+    if not product:
+        raise HTTPException(status_code=404, detail="Producto no encontrado")
+        
+    item.product_id = product.id
+    item.product_name = product.name
+    item.cost_price = product.cost_price
+    
+    await db.commit()
+    await db.refresh(item)
+    return {"success": True, "item_id": item.id, "product_id": product.id}
+
+

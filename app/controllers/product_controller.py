@@ -83,6 +83,16 @@ class ProductController:
 
     @staticmethod
     async def create(db: AsyncSession, product_in: ProductCreate, user_id: int):
+        from fastapi import HTTPException, status
+        if product_in.barcode:
+            stmt = select(Product).where(Product.barcode == product_in.barcode)
+            result = await db.execute(stmt)
+            if result.scalars().first():
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"El código de barras '{product_in.barcode}' ya está registrado para otro producto."
+                )
+
         margin = product_in.profit_margin if product_in.profit_margin is not None else 0.30
         price_usd = ProductController._calc_price_usd(product_in.cost_price, margin)
         db_obj = Product(**product_in.model_dump(), price_usd=price_usd)
