@@ -241,7 +241,7 @@ class ExchangeController:
         # Remove exchange payments ONLY if a payment was actually created
         if exchange_obj.total_difference_usd != 0:
             payments = await db.execute(
-                select(Payment).where(Payment.sale_id == exchange_obj.sale_id).order_by(Payment.created_at.desc())
+                select(Payment).where(Payment.sale_id == exchange_obj.sale_id).order_by(Payment.id.desc())
             )
             all_payments = payments.scalars().all()
             if all_payments:

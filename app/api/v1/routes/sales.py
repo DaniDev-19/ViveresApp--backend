@@ -1,14 +1,15 @@
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.api import deps
 from app.controllers.sale_controller import SaleController
 from app.controllers.return_controller import ReturnController
 from app.controllers.exchange_controller import ExchangeController
-from app.schemas.sale import SaleCreate, SaleResponse
+from app.schemas.sale import SaleCreate, SaleResponse, SaleEmailSend
 from app.schemas.sale_return import ReturnCreate, ReturnResponse
 from app.schemas.sale_exchange import ExchangeCreate, ExchangeResponse
 from app.models.user import User, UserRole
+from app.services.email_service import EmailService
 
 router = APIRouter()
 
@@ -28,6 +29,7 @@ async def get_sales(
     only_today: bool = False,
     date_filter: Optional[str] = None,
     payment_method: Optional[str] = None,
+    status: Optional[str] = None,
     current_user: User = Depends(deps.verify_roles([UserRole.ADMIN, UserRole.WORKER, UserRole.INVENTORY_MANAGER])),
 ):
     return await SaleController.get_multi(
@@ -37,8 +39,10 @@ async def get_sales(
         search=search,
         only_today=only_today,
         date_filter=date_filter,
-        payment_method=payment_method
+        payment_method=payment_method,
+        status=status
     )
+
 
 @router.post("/", response_model=SaleResponse, status_code=status.HTTP_201_CREATED)
 async def create_sale(
@@ -140,3 +144,26 @@ async def delete_sale_exchange(
     if not deleted:
         raise HTTPException(status_code=404, detail="Cambio no encontrado")
     return {"message": "Cambio eliminado y cambios revertidos", "id": exchange_id}
+
+
+@router.post("/{sale_id}/email")
+async def send_sale_email(
+    sale_id: int,
+    email_data: SaleEmailSend,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(deps.get_db),
+    current_user: User = Depends(deps.verify_roles([UserRole.ADMIN, UserRole.WORKER])),
+):
+    sale = await SaleController.get_by_id(db, sale_id=sale_id)
+    if not sale:
+        raise HTTPException(status_code=404, detail="Venta no encontrada")
+    
+    # Send email in background to keep response time low
+    background_tasks.add_task(
+        EmailService.send_html_email,
+        to_email=email_data.email,
+        subject=f"Recibo de Venta - #{sale_id:06d}",
+        html_content=email_data.html_content
+    )
+    
+    return {"message": "Correo electrónico encolado para envío"}

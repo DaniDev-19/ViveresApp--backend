@@ -20,3 +20,4 @@ passlib[bcrypt]
 python-multipart
 boto3
 Pillow
+aiosmtplib

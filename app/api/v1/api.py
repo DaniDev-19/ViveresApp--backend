@@ -23,3 +23,5 @@ api_router.include_router(routes.upload.router, prefix="/uploads", tags=["upload
 api_router.include_router(routes.deliveries.router, prefix="/deliveries", tags=["deliveries"])
 api_router.include_router(routes.returns.router, prefix="/returns", tags=["returns"])
 api_router.include_router(routes.exchanges.router, prefix="/exchanges", tags=["exchanges"])
+api_router.include_router(routes.emails.router, prefix="/emails", tags=["emails"])
+

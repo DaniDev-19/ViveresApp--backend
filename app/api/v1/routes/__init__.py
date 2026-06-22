@@ -21,4 +21,6 @@ from . import (
     deliveries,
     returns,
     exchanges,
+    emails,
 )
+

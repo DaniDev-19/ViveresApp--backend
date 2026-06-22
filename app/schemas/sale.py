@@ -37,6 +37,21 @@ class SaleResponse(BaseModel):
     customer_name: Optional[str] = None
     customer_phone: Optional[str] = None
     customer_cedula: Optional[str] = None
+    customer_email: Optional[str] = None
+
 
     class Config:
         from_attributes = True
+
+
+class SaleEmailSend(BaseModel):
+    email: str
+    html_content: str
+
+
+class CustomEmailSend(BaseModel):
+    email: str
+    subject: str
+    html_content: str
+
+

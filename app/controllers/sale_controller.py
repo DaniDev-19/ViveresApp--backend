@@ -16,10 +16,12 @@ class SaleController:
         limit: int = 100, 
         search: str = None, 
         only_today: bool = False,
-        date_filter: Optional[str] = None,  # <-- NUEVO: Parámetro opcional para recibir "YYYY-MM-DD"
-        payment_method: Optional[str] = None
+        date_filter: Optional[str] = None, 
+        payment_method: Optional[str] = None,
+        status: Optional[str] = None
     ):
         from sqlalchemy.orm import selectinload
+
         
         stmt = select(Sale).options(
             selectinload(Sale.items).selectinload(SaleItem.product),
@@ -54,7 +56,15 @@ class SaleController:
         if payment_method:
             stmt = stmt.join(Sale.payments).where(Payment.method == payment_method).distinct()
         
+        # 5. Filtro por estado de la venta
+        if status:
+            if status == "returned":
+                stmt = stmt.where(Sale.status.in_(["returned", "partially_returned"]))
+            else:
+                stmt = stmt.where(Sale.status == status)
+        
         result = await db.execute(stmt.offset(skip).limit(limit))
+
         sales = result.scalars().all()
         
         # Fetch returns and exchanges to calculate Net total
@@ -86,6 +96,7 @@ class SaleController:
                 sale.customer_name = sale.customer.name
                 sale.customer_phone = sale.customer.phone
                 sale.customer_cedula = sale.customer.cedula
+                sale.customer_email = sale.customer.email
             for item in sale.items:
                 if item.product:
                     item.name = item.product.name
@@ -189,6 +200,7 @@ class SaleController:
                 sale.customer_name = sale.customer.name
                 sale.customer_phone = sale.customer.phone
                 sale.customer_cedula = sale.customer.cedula
+                sale.customer_email = sale.customer.email
             for item in sale.items:
                 if item.product:
                     item.name = item.product.name

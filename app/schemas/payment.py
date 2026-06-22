@@ -6,6 +6,7 @@ class PaymentMethod(str, Enum):
     CASH_USD = "Efectivo_USD"
     PAGO_MOVIL = "Pago_Movil"
     PAGO_MOVIL_ALT = "Pago Móvil"
+    PAGO_MOVIL_LEGACY = "pago_movil"  
     ZELLE = "Zelle"
     BINANCE = "Binance"
     CASHEA = "Cashea"
@@ -36,6 +37,14 @@ class PaymentBase(BaseModel):
 class PaymentCreate(PaymentBase):
     pass
 
-class PaymentResponse(PaymentBase):
+class PaymentResponse(BaseModel):
+    """Uses str for method to tolerate any legacy value stored in the DB."""
+    method: str
+    amount: float
+    currency: str
+    exchange_rate: float
+    amount_usd_equivalent: float | None = None
+
     class Config:
         from_attributes = True
+

@@ -44,6 +44,13 @@ class Settings(BaseSettings):
     R2_SECRET_KEY: Optional[str] = None
     R2_ENDPOINT: Optional[str] = None
     R2_PUBLIC_URL: Optional[str] = None
+    # SMTP Settings
+    SMTP_HOST: str = "smtp.gmail.com"
+
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM: str = "ViveresApp <noreply@viveresapp.com>"
 
     class Config:
         case_sensitive = True
