@@ -97,6 +97,22 @@ class ProductController:
         price_usd = ProductController._calc_price_usd(product_in.cost_price, margin)
         db_obj = Product(**product_in.model_dump(), price_usd=price_usd)
         db.add(db_obj)
+        await db.flush()
+
+        if db_obj.stock_quantity > 0:
+            from app.controllers.inventory_controller import InventoryController
+            await InventoryController.register_movement(
+                db=db,
+                product_id=db_obj.id,
+                movement_type="adjustment",
+                quantity_change=db_obj.stock_quantity,
+                reference_id=None,
+                reference_type="adjustment",
+                notes="Stock inicial en creación de producto",
+                user_id=user_id,
+                commit=False
+            )
+
         await db.commit()
         product = await ProductController._get_with_category(db, db_obj.id)
         await AuditService.log_action(db, user_id, "CREATE", "products", f"Creado producto {product.name}")
@@ -122,10 +138,27 @@ class ProductController:
             )
             update_data["price_usd"] = ProductController._calc_price_usd(new_cost, new_margin)
 
+        old_stock = product.stock_quantity
         for field, value in update_data.items():
             setattr(product, field, value)
 
         db.add(product)
+        await db.flush()
+
+        if old_stock != product.stock_quantity:
+            from app.controllers.inventory_controller import InventoryController
+            await InventoryController.register_movement(
+                db=db,
+                product_id=product.id,
+                movement_type="adjustment",
+                quantity_change=product.stock_quantity - old_stock,
+                reference_id=None,
+                reference_type="adjustment",
+                notes="Ajuste de stock en edición de producto",
+                user_id=user_id,
+                commit=False
+            )
+
         await db.commit()
         product = await ProductController._get_with_category(db, product_id)
         await AuditService.log_action(db, user_id, "UPDATE", "products", f"Actualizado producto {product.id}")

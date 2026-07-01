@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 from app.api.v1 import routes
+from app.api.v1.routes.inventory import router as inventory_router
 
 api_router = APIRouter()
 api_router.include_router(routes.auth.router, tags=["auth"])
@@ -24,4 +25,6 @@ api_router.include_router(routes.deliveries.router, prefix="/deliveries", tags=[
 api_router.include_router(routes.returns.router, prefix="/returns", tags=["returns"])
 api_router.include_router(routes.exchanges.router, prefix="/exchanges", tags=["exchanges"])
 api_router.include_router(routes.emails.router, prefix="/emails", tags=["emails"])
+api_router.include_router(inventory_router, prefix="/inventory", tags=["inventory"])
+
 

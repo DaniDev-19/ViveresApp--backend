@@ -26,13 +26,14 @@ class PurchaseController:
         return result.scalars().first()
 
     @staticmethod
-    async def receive(db: AsyncSession, order_id: int, receipt_in: PurchaseOrderReceipt):
+    async def receive(db: AsyncSession, order_id: int, receipt_in: PurchaseOrderReceipt, user_id: int = None):
         query = select(PurchaseOrder).where(PurchaseOrder.id == order_id).options(selectinload(PurchaseOrder.provider), selectinload(PurchaseOrder.items).selectinload(PurchaseItem.product))
         result = await db.execute(query)
         order = result.scalars().first()
         if not order or order.status == "completed":
             return None
         
+        from app.controllers.inventory_controller import InventoryController
         receipt_map = {item.id: item for item in receipt_in.items}
         for item in order.items:
             receipt_data = receipt_map.get(item.id)
@@ -41,10 +42,22 @@ class PurchaseController:
             item.received_quantity = received_qty
             item.cost_price = actual_cost
             item.status = "verified" if received_qty == item.requested_quantity else "mismatch"
-            if item.product:
+            if item.product and received_qty > 0:
                 item.product.stock_quantity += received_qty
                 item.product.cost_price = actual_cost
                 item.product.price_usd = actual_cost * (1 + item.product.profit_margin) * (1 + item.product.tax_rate)
+                
+                await InventoryController.register_movement(
+                    db=db,
+                    product_id=item.product_id,
+                    movement_type="purchase",
+                    quantity_change=received_qty,
+                    reference_id=order.id,
+                    reference_type="purchase",
+                    notes=f"Compra recibida OC #{order.id}",
+                    user_id=user_id,
+                    commit=False
+                )
         
         order.status = "completed"
         await db.commit()

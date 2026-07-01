@@ -128,6 +128,7 @@ class ReturnController:
         db.add(return_obj)
         await db.flush()
 
+        from app.controllers.inventory_controller import InventoryController
         for item_data in return_items_data:
             return_item = SaleReturnItem(return_id=return_obj.id, **item_data)
             db.add(return_item)
@@ -136,6 +137,17 @@ class ReturnController:
             product = await db.get(Product, item_data["product_id"])
             if product:
                 product.stock_quantity += item_data["quantity"]
+                await InventoryController.register_movement(
+                    db=db,
+                    product_id=product.id,
+                    movement_type="return",
+                    quantity_change=item_data["quantity"],
+                    reference_id=return_obj.id,
+                    reference_type="return",
+                    notes=f"Devolución recibida DEV #{return_obj.id}",
+                    user_id=user_id,
+                    commit=False
+                )
 
         # Create refund payment record
         if return_in.refund_method == "cash":
@@ -210,10 +222,22 @@ class ReturnController:
             return False
 
         # Reverse stock changes (remove stock that was added back)
+        from app.controllers.inventory_controller import InventoryController
         for item in return_obj.items:
             product = await db.get(Product, item.product_id)
             if product:
                 product.stock_quantity -= item.quantity
+                await InventoryController.register_movement(
+                    db=db,
+                    product_id=product.id,
+                    movement_type="adjustment",
+                    quantity_change=-item.quantity,
+                    reference_id=return_obj.id,
+                    reference_type="return",
+                    notes=f"Devolución eliminada DEV #{return_obj.id}",
+                    user_id=user_id,
+                    commit=False
+                )
 
         # Restore sale status to completed
         sale = await db.get(Sale, return_obj.sale_id)

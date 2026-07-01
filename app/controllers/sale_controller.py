@@ -157,9 +157,21 @@ class SaleController:
         db.add(db_sale)
         await db.flush()
 
+        from app.controllers.inventory_controller import InventoryController
         for item in db_items:
             item.sale_id = db_sale.id
             db.add(item)
+            await InventoryController.register_movement(
+                db=db,
+                product_id=item.product_id,
+                movement_type="sale",
+                quantity_change=-item.quantity,
+                reference_id=db_sale.id,
+                reference_type="sale",
+                notes=f"Venta POS #{db_sale.id}",
+                user_id=user_id,
+                commit=False
+            )
 
         for p_in in sale_in.payments:
             payment = Payment(
@@ -254,9 +266,21 @@ class SaleController:
             return None
 
         # Restaurar stock
+        from app.controllers.inventory_controller import InventoryController
         for item in sale.items:
             if item.product:
                 item.product.stock_quantity += item.quantity
+                await InventoryController.register_movement(
+                    db=db,
+                    product_id=item.product_id,
+                    movement_type="adjustment",
+                    quantity_change=item.quantity,
+                    reference_id=sale.id,
+                    reference_type="sale",
+                    notes=f"Venta eliminada #{sale.id}",
+                    user_id=user_id,
+                    commit=False
+                )
 
         from app.services.audit_service import AuditService
         await AuditService.log_action(db, user_id, "DELETE", "sales", f"Eliminada venta #{sale.id} (${sale.total_amount_usd:.2f})", commit=False)

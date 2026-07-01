@@ -35,6 +35,11 @@ async def update_user(
     user_in: UserUpdate,
     current_user: UserResponse = Depends(deps.verify_roles([UserRole.ADMIN])),
 ):
+    if user_id == current_user.id and user_in.is_active is False:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No puedes desactivar tu propio usuario"
+        )
     user = await UserController.update(db, user_id=user_id, user_in=user_in)
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
@@ -47,8 +52,14 @@ async def delete_user(
     user_id: int,
     current_user: UserResponse = Depends(deps.verify_roles([UserRole.ADMIN])),
 ):
+    if user_id == current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No puedes eliminar tu propio usuario"
+        )
     user = await UserController.delete(db, user_id=user_id)
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
     return user
+
 

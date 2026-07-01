@@ -18,3 +18,5 @@ from app.models.notification import Notification  # noqa
 from app.models.delivery import Delivery  # noqa
 from app.models.sale_return import SaleReturn, SaleReturnItem  # noqa
 from app.models.sale_exchange import SaleExchange, SaleExchangeItemOut, SaleExchangeItemIn  # noqa
+from app.models.inventory_movement import InventoryMovement  # noqa
+

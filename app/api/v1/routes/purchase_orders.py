@@ -34,7 +34,7 @@ async def receive_purchase_order(
     receipt_in: PurchaseOrderReceipt,
     current_user: User = Depends(deps.verify_roles([UserRole.ADMIN, UserRole.INVENTORY_MANAGER])),
 ):
-    order = await PurchaseController.receive(db, order_id=order_id, receipt_in=receipt_in)
+    order = await PurchaseController.receive(db, order_id=order_id, receipt_in=receipt_in, user_id=current_user.id)
     if not order:
         raise HTTPException(status_code=404, detail="Orden no encontrada o ya completada")
     return order

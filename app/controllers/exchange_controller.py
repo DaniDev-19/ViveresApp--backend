@@ -128,6 +128,7 @@ class ExchangeController:
         db.add(exchange_obj)
         await db.flush()
 
+        from app.controllers.inventory_controller import InventoryController
         for item_data in items_out_data:
             exchange_item = SaleExchangeItemOut(exchange_id=exchange_obj.id, **item_data)
             db.add(exchange_item)
@@ -135,6 +136,17 @@ class ExchangeController:
             product = await db.get(Product, item_data["product_id"])
             if product:
                 product.stock_quantity += item_data["quantity"]
+                await InventoryController.register_movement(
+                    db=db,
+                    product_id=product.id,
+                    movement_type="exchange_in",
+                    quantity_change=item_data["quantity"],
+                    reference_id=exchange_obj.id,
+                    reference_type="exchange",
+                    notes=f"Cambio (Entrada) CAM #{exchange_obj.id}",
+                    user_id=user_id,
+                    commit=False
+                )
 
         for item_data in items_in_data:
             exchange_item = SaleExchangeItemIn(exchange_id=exchange_obj.id, **item_data)
@@ -143,6 +155,17 @@ class ExchangeController:
             product = await db.get(Product, item_data["product_id"])
             if product:
                 product.stock_quantity -= item_data["quantity"]
+                await InventoryController.register_movement(
+                    db=db,
+                    product_id=product.id,
+                    movement_type="exchange_out",
+                    quantity_change=-item_data["quantity"],
+                    reference_id=exchange_obj.id,
+                    reference_type="exchange",
+                    notes=f"Cambio (Salida) CAM #{exchange_obj.id}",
+                    user_id=user_id,
+                    commit=False
+                )
 
         # Determine currency and rate for the payment
         from app.services.currency import currency_service
@@ -222,16 +245,39 @@ class ExchangeController:
             return False
 
         # Reverse stock: items_out were added back -> subtract them
+        from app.controllers.inventory_controller import InventoryController
         for item in exchange_obj.items_out:
             product = await db.get(Product, item.product_id)
             if product:
                 product.stock_quantity -= item.quantity
+                await InventoryController.register_movement(
+                    db=db,
+                    product_id=product.id,
+                    movement_type="adjustment",
+                    quantity_change=-item.quantity,
+                    reference_id=exchange_obj.id,
+                    reference_type="exchange",
+                    notes=f"Cambio eliminado CAM #{exchange_obj.id}",
+                    user_id=user_id,
+                    commit=False
+                )
 
         # Reverse stock: items_in were subtracted -> add them back
         for item in exchange_obj.items_in:
             product = await db.get(Product, item.product_id)
             if product:
                 product.stock_quantity += item.quantity
+                await InventoryController.register_movement(
+                    db=db,
+                    product_id=product.id,
+                    movement_type="adjustment",
+                    quantity_change=item.quantity,
+                    reference_id=exchange_obj.id,
+                    reference_type="exchange",
+                    notes=f"Cambio eliminado CAM #{exchange_obj.id}",
+                    user_id=user_id,
+                    commit=False
+                )
 
         # Restore sale status
         sale = await db.get(Sale, exchange_obj.sale_id)

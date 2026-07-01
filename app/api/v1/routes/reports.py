@@ -448,8 +448,39 @@ async def generate_pago_movil_qr(
     c = canvas.Canvas(buffer, pagesize=letter)
     width, height = letter
 
-    # Format data for QR
-    qr_data = f"pagomovil:banco={settings.PAGO_MOVIL_BANCO}&telf={settings.PAGO_MOVIL_TELEFONO}&rif={settings.PAGO_MOVIL_RIF_CI}"
+    # Format data for QR — texto plano legible por apps bancarias venezolanas
+    bank_code = settings.PAGO_MOVIL_BANCO
+    bank_names_map = {
+        "0102": "Banco de Venezuela",
+        "0108": "Provincial",
+        "0105": "Mercantil",
+        "0134": "Banesco",
+        "0191": "BNC",
+        "0172": "Bancamiga",
+        "0114": "Bancaribe",
+        "0115": "Exterior",
+        "0128": "Caroní",
+        "0151": "Fondo Común",
+        "0163": "Del Tesoro",
+        "0166": "Agrícola",
+        "0168": "Bancrecer",
+        "0171": "Activo",
+        "0174": "Banplus",
+        "0175": "Bicentenario",
+        "0177": "Banfanb",
+        "0196": "Mi Banco",
+    }
+    bank_name_str = bank_names_map.get(bank_code, bank_code)
+    # Formato de texto plano estándar que la mayoría de apps bancarias venezolanas
+    # (BDV, Bancamiga, Banesco, etc.) pueden parsear para autocompletar pago móvil
+    qr_data = (
+        f"Pago Movil\n"
+        f"Banco: {bank_name_str} ({bank_code})\n"
+        f"Telefono: {settings.PAGO_MOVIL_TELEFONO}\n"
+        f"Cedula/RIF: {settings.PAGO_MOVIL_RIF_CI}\n"
+        f"Titular: {settings.PAGO_MOVIL_NOMBRE}"
+    )
+
     
     qr = qrcode.QRCode(box_size=10, border=2)
     qr.add_data(qr_data)

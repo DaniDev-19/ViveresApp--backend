@@ -1689,4 +1689,138 @@ class ReportService:
         buffer.seek(0)
         return buffer
 
+    def generate_movements_pdf(self, movements_data: List[Dict[str, Any]], date_range: str) -> BytesIO:
+        buffer = BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=landscape(letter), rightMargin=20, leftMargin=20, topMargin=30, bottomMargin=30)
+        elements = []
+        
+        elements.append(Paragraph(settings.BUSINESS_NAME.upper(), self._get_header_style()))
+        elements.append(Paragraph("Kardex / Historial de Movimientos de Inventario", self._get_sub_header_style()))
+        elements.append(Paragraph(f"Periodo: {date_range} | Generado: {datetime.now().strftime('%d/%m/%Y %H:%M')}", self._get_sub_header_style()))
+        
+        header_style = ParagraphStyle(
+            'HeaderCellStyle',
+            parent=getSampleStyleSheet()['Normal'],
+            fontName='Helvetica-Bold',
+            fontSize=9,
+            textColor=colors.white,
+            alignment=TA_CENTER
+        )
+        
+        headers = [
+            Paragraph("Fecha / Hora", header_style),
+            Paragraph("Tipo de Movimiento", header_style),
+            Paragraph("Producto", header_style),
+            Paragraph("Referencia", header_style),
+            Paragraph("Cant. Cambio", header_style),
+            Paragraph("Stock Antes", header_style),
+            Paragraph("Stock Después", header_style),
+            Paragraph("Usuario", header_style),
+            Paragraph("Notas", header_style)
+        ]
+        
+        cell_style = ParagraphStyle(
+            'TableCellMovements',
+            parent=getSampleStyleSheet()['Normal'],
+            fontSize=8,
+            alignment=TA_CENTER
+        )
+        
+        rows = []
+        for m in movements_data:
+            dt_str = m.get("date", "")
+            try:
+                dt_obj = datetime.fromisoformat(dt_str)
+                date_display = dt_obj.strftime("%d/%m/%Y %H:%M")
+            except Exception:
+                date_display = dt_str[:16]
+            
+            rows.append([
+                Paragraph(date_display, cell_style),
+                Paragraph(m.get("type_label", ""), cell_style),
+                Paragraph(m.get("product_name", ""), cell_style),
+                Paragraph(m.get("reference_label", ""), cell_style),
+                Paragraph(f"{'+' if m.get('quantity_change', 0) > 0 else ''}{m.get('quantity_change', 0)}", cell_style),
+                Paragraph(str(m.get("stock_before", 0)), cell_style),
+                Paragraph(str(m.get("stock_after", 0)), cell_style),
+                Paragraph(m.get("user", ""), cell_style),
+                Paragraph(m.get("notes", "") or "-", cell_style)
+            ])
+
+        col_widths = [90, 95, 120, 65, 55, 55, 55, 60, 147]
+        t = Table([headers] + rows, colWidths=col_widths)
+        t.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#4F46E5')),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+            ('TOPPADDING', (0, 0), (-1, 0), 8),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#D1D5DB')),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F9FAFB')]),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ]))
+        
+        elements.append(t)
+        doc.build(elements)
+        buffer.seek(0)
+        return buffer
+
+    def generate_movements_excel(self, movements_data: List[Dict[str, Any]]) -> BytesIO:
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Kardex de Inventario"
+
+        ws.merge_cells('A1:I1')
+        ws['A1'] = f"{settings.BUSINESS_NAME.upper()} - KARDEX DE INVENTARIO"
+        ws['A1'].font = Font(bold=True, size=16)
+        ws['A1'].alignment = Alignment(horizontal="center")
+        
+        headers = ["Fecha / Hora", "Tipo de Movimiento", "Producto", "Referencia", "Cambio Cantidad", "Stock Antes", "Stock Después", "Usuario", "Notas / Justificación"]
+        header_font = Font(bold=True, color="FFFFFF", size=12)
+        header_fill = PatternFill(start_color="4F46E5", end_color="4F46E5", fill_type="solid")
+        border = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
+        
+        for col_num, header in enumerate(headers, 1):
+            cell = ws.cell(row=2, column=col_num, value=header)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+            cell.border = border
+            ws.column_dimensions[openpyxl.utils.get_column_letter(col_num)].width = 18
+
+        ws.column_dimensions['C'].width = 30
+        ws.column_dimensions['I'].width = 40
+
+        for row_num, m in enumerate(movements_data, 3):
+            dt_str = m.get("date", "")
+            try:
+                dt_obj = datetime.fromisoformat(dt_str)
+                date_display = dt_obj.strftime("%Y-%m-%d %H:%M")
+            except Exception:
+                date_display = dt_str[:16]
+
+            ws.cell(row=row_num, column=1, value=date_display)
+            ws.cell(row=row_num, column=2, value=str(m.get("type_label", "")))
+            ws.cell(row=row_num, column=3, value=str(m.get("product_name", "")))
+            ws.cell(row=row_num, column=4, value=str(m.get("reference_label", "")))
+            
+            c_change = ws.cell(row=row_num, column=5, value=m.get("quantity_change", 0))
+            c_change.number_format = '#,##0'
+            if m.get("quantity_change", 0) > 0:
+                c_change.font = Font(color="10B981", bold=True)
+            else:
+                c_change.font = Font(color="EF4444", bold=True)
+                
+            ws.cell(row=row_num, column=6, value=m.get("stock_before", 0)).number_format = '#,##0'
+            ws.cell(row=row_num, column=7, value=m.get("stock_after", 0)).number_format = '#,##0'
+            ws.cell(row=row_num, column=8, value=str(m.get("user", "Sistema")))
+            ws.cell(row=row_num, column=9, value=str(m.get("notes", "") or "-"))
+
+            for i in range(1, 10):
+                ws.cell(row=row_num, column=i).border = border
+
+        buffer = BytesIO()
+        wb.save(buffer)
+        buffer.seek(0)
+        return buffer
+
 report_service = ReportService()
