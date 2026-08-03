@@ -30,6 +30,6 @@ async def get_history(
 @router.post("/refresh")
 async def refresh_rates(
     db: AsyncSession = Depends(deps.get_db),
-    current_user: User = Depends(deps.get_current_active_user),
 ):
     return await ExchangeRateController.refresh(db)
+

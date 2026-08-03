@@ -297,7 +297,7 @@ async def export_inventory_report(
     """
     from app.models.product import Product
 
-    query = select(Product).options(joinedload(Product.provider))
+    query = select(Product).options(joinedload(Product.provider), joinedload(Product.category))
     if filter == "low_stock":
         query = query.where(Product.stock_quantity <= Product.min_stock_level)
     elif filter == "zero_stock":         
@@ -318,15 +318,24 @@ async def export_inventory_report(
 
     products_data = []
     for prod in products:
+        margin_pct = f"{(prod.profit_margin or 0.30) * 100:.0f}%"
+        tax_pct = f"{(prod.tax_rate or 0.16) * 100:.0f}%"
         products_data.append({
             "id": prod.id,
-            "barcode": prod.barcode or "N/A",  # Added Barcode
+            "barcode": prod.barcode or "N/A",
             "name": prod.name,
-            "stock": prod.stock_quantity,
-            "cost": prod.cost_price,
-            "price": prod.price_usd,
+            "description": prod.description or "",
+            "category": prod.category.name if prod.category else "Sin Categoría",
+            "provider": prod.provider.name if prod.provider else "Sin Proveedor",
+            "stock": prod.stock_quantity or 0,
+            "min_stock": prod.min_stock_level or 0,
+            "cost": prod.cost_price or 0.0,
+            "price": prod.price_usd or 0.0,
             "offer_price": prod.offer_price_usd or 0.0,
-            "margin": f"{prod.profit_margin * 100:.0f}%",
+            "margin": margin_pct,
+            "tax_rate": tax_pct,
+            "is_public": "Sí" if prod.is_public else "No",
+            "apply_iva_web": "Sí" if prod.apply_iva_web else "No",
         })
     
     if format == "pdf":

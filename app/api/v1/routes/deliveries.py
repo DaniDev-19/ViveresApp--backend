@@ -12,7 +12,7 @@ router = APIRouter()
 async def get_deliveries(
     db: AsyncSession = Depends(deps.get_db),
     skip: int = 0,
-    limit: int = 100,
+    limit: int = 1000,
     status_filter: Optional[str] = None,
     provider_id: Optional[int] = None,
     current_user: User = Depends(deps.verify_roles([UserRole.ADMIN, UserRole.WORKER, UserRole.DELIVERY])),
@@ -40,22 +40,20 @@ async def get_delivery(
         
     return delivery
 
-@router.post("/", response_model=DeliveryResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/", response_model=DeliveryResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(deps.verify_roles([UserRole.ADMIN, UserRole.WORKER]))])
 async def create_delivery(
     *,
     db: AsyncSession = Depends(deps.get_db),
     delivery_in: DeliveryCreate,
-    current_user: User = Depends(deps.verify_roles([UserRole.ADMIN, UserRole.WORKER])),
 ):
     return await DeliveryController.create(db, delivery_in=delivery_in)
 
-@router.put("/{delivery_id}", response_model=DeliveryResponse)
+@router.put("/{delivery_id}", response_model=DeliveryResponse, dependencies=[Depends(deps.verify_roles([UserRole.ADMIN, UserRole.WORKER]))])
 async def update_delivery(
     *,
     db: AsyncSession = Depends(deps.get_db),
     delivery_id: int,
     delivery_in: DeliveryUpdate,
-    current_user: User = Depends(deps.verify_roles([UserRole.ADMIN, UserRole.WORKER])),
 ):
     delivery = await DeliveryController.update(db, delivery_id=delivery_id, delivery_in=delivery_in)
     if not delivery:
@@ -86,12 +84,11 @@ async def update_delivery_status(
     delivery_in = DU(**update_data)
     return await DeliveryController.update(db, delivery_id=delivery_id, delivery_in=delivery_in)
 
-@router.delete("/{delivery_id}")
+@router.delete("/{delivery_id}", dependencies=[Depends(deps.verify_roles([UserRole.ADMIN]))])
 async def delete_delivery(
     *,
     db: AsyncSession = Depends(deps.get_db),
     delivery_id: int,
-    current_user: User = Depends(deps.verify_roles([UserRole.ADMIN])),
 ):
     delivery = await DeliveryController.delete(db, delivery_id=delivery_id)
     if not delivery:

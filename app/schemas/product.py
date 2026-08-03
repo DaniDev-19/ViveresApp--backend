@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, List
 from pydantic import BaseModel, Field, field_validator
 from app.schemas.category import CategoryResponse
 
@@ -18,6 +18,18 @@ class ProductBase(BaseModel):
     image_url: Optional[str] = None
     is_public: bool = True
     apply_iva_web: bool = True
+
+    @field_validator("cost_price")
+    def validate_cost_price_base(cls, v):
+        if v < 0:
+            raise ValueError("El costo no puede ser negativo")
+        return v
+
+    @field_validator("offer_price_usd")
+    def validate_offer_price_base(cls, v):
+        if v is not None and v < 0:
+            raise ValueError("El precio de oferta no puede ser negativo")
+        return v
 
 
 class ProductCreate(ProductBase):
@@ -43,8 +55,6 @@ class ProductUpdate(BaseModel):
             return v
         if v < 0:
             raise ValueError("El costo no puede ser negativo")
-        if 0 < v < 1:
-            raise ValueError("El costo debe ser 0 o mayor o igual a 1")
         return v
 
     @field_validator("offer_price_usd")
@@ -53,12 +63,18 @@ class ProductUpdate(BaseModel):
             return v
         if v < 0:
             raise ValueError("El precio de oferta no puede ser negativo")
-        if 0 < v < 1:
-            raise ValueError("El precio de oferta debe ser 0 o mayor o igual a 1")
         return v
     image_url: Optional[str] = None
     is_public: Optional[bool] = None
     apply_iva_web: Optional[bool] = None
+
+
+class BulkPriceUpdate(BaseModel):
+    percentage: float = Field(..., description="Porcentaje de ajuste. Ej: 10 para +10%, -5 para -5%")
+    scope: str = Field("all", description="'all', 'category', o 'selective'")
+    category_id: Optional[int] = None
+    product_ids: Optional[List[int]] = None
+    update_offers: bool = True
 
 
 class ProductResponse(ProductBase):
@@ -69,3 +85,4 @@ class ProductResponse(ProductBase):
 
     class Config:
         from_attributes = True
+

@@ -178,3 +178,51 @@ class ProductController:
         await db.delete(product)
         await db.commit()
         return product
+
+    @staticmethod
+    async def bulk_price_update(db: AsyncSession, bulk_in, user_id: int):
+        query = select(Product)
+        if bulk_in.scope == "category" and bulk_in.category_id is not None:
+            query = query.where(Product.category_id == bulk_in.category_id)
+        elif bulk_in.scope == "selective" and bulk_in.product_ids:
+            query = query.where(Product.id.in_(bulk_in.product_ids))
+        elif bulk_in.scope != "all":
+            return {"updated_count": 0, "message": "Ámbito de ajuste no válido"}
+
+        result = await db.execute(query)
+        products = result.scalars().all()
+
+        if not products:
+            return {"updated_count": 0, "message": "No se encontraron productos para actualizar"}
+
+        factor = 1.0 + (bulk_in.percentage / 100.0)
+        updated_count = 0
+
+        for product in products:
+            new_cost = round(max(0.0, product.cost_price * factor), 4)
+            product.cost_price = new_cost
+            
+            margin = product.profit_margin if product.profit_margin is not None else 0.30
+            product.price_usd = round(ProductController._calc_price_usd(new_cost, margin), 4)
+            
+            if bulk_in.update_offers and product.offer_price_usd is not None and product.offer_price_usd > 0:
+                product.offer_price_usd = round(max(0.0, product.offer_price_usd * factor), 4)
+
+            db.add(product)
+            updated_count += 1
+
+        await db.commit()
+
+        details = (
+            f"Ajuste masivo de precios del {bulk_in.percentage:+}% en ámbito '{bulk_in.scope}'. "
+            f"Productos afectados: {updated_count}."
+        )
+        await AuditService.log_action(db, user_id, "BULK_UPDATE", "products", details)
+
+        return {
+            "success": True,
+            "updated_count": updated_count,
+            "percentage": bulk_in.percentage,
+            "scope": bulk_in.scope,
+            "message": f"Se actualizaron {updated_count} productos exitosamente."
+        }

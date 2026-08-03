@@ -507,14 +507,18 @@ class ReportService:
         ws.title = "Inventario"
 
         if report_type == "code_name":
-            headers = ["Código", "Producto"]
-            max_col = 2
-        elif report_type == "prices":
-            headers = ["Código", "Producto", "Precio Oferta", "Precio Final"]
+            headers = ["Código", "Producto", "Descripción", "Categoría"]
             max_col = 4
+        elif report_type == "prices":
+            headers = ["Código", "Producto", "Costo ($)", "Margen", "IVA (%)", "Precio Oferta ($)", "Precio Final ($)"]
+            max_col = 7
         else:
-            headers = ["ID", "Código", "Producto", "Stock", "Costo", "Precio", "Margen", "Valor Total"]
-            max_col = 8
+            headers = [
+                "ID", "Código", "Producto", "Descripción", "Categoría", "Proveedor",
+                "Stock", "Stock Mínimo", "Costo ($)", "Margen", "IVA (%)", "Precio Oferta ($)",
+                "Precio ($)", "Valor Total ($)", "Visible Web", "IVA Web"
+            ]
+            max_col = len(headers)
 
         ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=max_col)
         ws.cell(row=1, column=1, value=settings.BUSINESS_NAME.upper())
@@ -529,7 +533,7 @@ class ReportService:
             ws.cell(row=2, column=1).alignment = Alignment(horizontal="left")
             header_row = 3
 
-        header_font = Font(bold=True, color="FFFFFF", size=12)
+        header_font = Font(bold=True, color="FFFFFF", size=11)
         header_fill = PatternFill(start_color="10B981", end_color="10B981", fill_type="solid")
         border = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
 
@@ -539,36 +543,90 @@ class ReportService:
             cell.fill = header_fill
             cell.alignment = Alignment(horizontal="center", vertical="center")
             cell.border = border
-            ws.column_dimensions[openpyxl.utils.get_column_letter(col_num)].width = 15
 
-        if report_type in ["code_name", "prices"]:
-            ws.column_dimensions['B'].width = 40  # Name
-        else:
-            ws.column_dimensions['C'].width = 40  # Name
+        col_widths = {
+            "ID": 10,
+            "Código": 18,
+            "Producto": 35,
+            "Descripción": 30,
+            "Categoría": 20,
+            "Proveedor": 20,
+            "Stock": 12,
+            "Stock Mínimo": 14,
+            "Costo ($)": 14,
+            "Margen": 12,
+            "IVA (%)": 12,
+            "Precio Oferta ($)": 16,
+            "Precio ($)": 14,
+            "Precio Final ($)": 16,
+            "Valor Total ($)": 16,
+            "Visible Web": 12,
+            "IVA Web": 12
+        }
+        for col_num, header in enumerate(headers, 1):
+            col_letter = openpyxl.utils.get_column_letter(col_num)
+            ws.column_dimensions[col_letter].width = col_widths.get(header, 16)
 
-        for row_num, prod in enumerate(products_data, 3):
+        data_start_row = header_row + 1
+        for idx, prod in enumerate(products_data):
+            row_num = data_start_row + idx
             if report_type == "code_name":
                 ws.cell(row=row_num, column=1, value=prod.get("barcode", "N/A"))
                 ws.cell(row=row_num, column=2, value=prod.get("name"))
+                ws.cell(row=row_num, column=3, value=prod.get("description", ""))
+                ws.cell(row=row_num, column=4, value=prod.get("category", ""))
             elif report_type == "prices":
                 off_price = prod.get("offer_price", 0.0)
                 ws.cell(row=row_num, column=1, value=prod.get("barcode", "N/A"))
                 ws.cell(row=row_num, column=2, value=prod.get("name"))
-                ws.cell(row=row_num, column=3, value=off_price if off_price > 0 else "-").number_format = '"$"#,##0.00' if off_price > 0 else '@'
-                ws.cell(row=row_num, column=4, value=prod.get("price")).number_format = '"$"#,##0.00'
+                ws.cell(row=row_num, column=3, value=prod.get("cost", 0.0)).number_format = '"$"#,##0.00'
+                ws.cell(row=row_num, column=4, value=prod.get("margin", ""))
+                ws.cell(row=row_num, column=5, value=prod.get("tax_rate", ""))
+                ws.cell(row=row_num, column=6, value=off_price if off_price > 0 else "-").number_format = '"$"#,##0.00' if off_price > 0 else '@'
+                ws.cell(row=row_num, column=7, value=prod.get("price", 0.0)).number_format = '"$"#,##0.00'
             else:
-                val = prod.get("stock", 0) * prod.get("price", 0)
+                stock_qty = prod.get("stock", 0)
+                price_val = prod.get("price", 0.0)
+                cost_val = prod.get("cost", 0.0)
+                off_price = prod.get("offer_price", 0.0)
+                val = stock_qty * price_val
+
                 ws.cell(row=row_num, column=1, value=prod.get("id"))
                 ws.cell(row=row_num, column=2, value=prod.get("barcode", "N/A"))
                 ws.cell(row=row_num, column=3, value=prod.get("name"))
-                ws.cell(row=row_num, column=4, value=prod.get("stock"))
-                ws.cell(row=row_num, column=5, value=prod.get("cost")).number_format = '"$"#,##0.00'
-                ws.cell(row=row_num, column=6, value=prod.get("price")).number_format = '"$"#,##0.00'
-                ws.cell(row=row_num, column=7, value=prod.get("margin"))
-                ws.cell(row=row_num, column=8, value=val).number_format = '"$"#,##0.00'
+                ws.cell(row=row_num, column=4, value=prod.get("description", ""))
+                ws.cell(row=row_num, column=5, value=prod.get("category", ""))
+                ws.cell(row=row_num, column=6, value=prod.get("provider", ""))
+                ws.cell(row=row_num, column=7, value=stock_qty)
+                ws.cell(row=row_num, column=8, value=prod.get("min_stock", 0))
+                ws.cell(row=row_num, column=9, value=cost_val).number_format = '"$"#,##0.00'
+                ws.cell(row=row_num, column=10, value=prod.get("margin", ""))
+                ws.cell(row=row_num, column=11, value=prod.get("tax_rate", ""))
+                ws.cell(row=row_num, column=12, value=off_price if off_price > 0 else "-").number_format = '"$"#,##0.00' if off_price > 0 else '@'
+                ws.cell(row=row_num, column=13, value=price_val).number_format = '"$"#,##0.00'
+                ws.cell(row=row_num, column=14, value=val).number_format = '"$"#,##0.00'
+                ws.cell(row=row_num, column=15, value=prod.get("is_public", "Sí"))
+                ws.cell(row=row_num, column=16, value=prod.get("apply_iva_web", "Sí"))
 
             for i in range(1, max_col + 1):
                 ws.cell(row=row_num, column=i).border = border
+
+        if report_type == "standard" and products_data:
+            total_row = data_start_row + len(products_data)
+            ws.cell(row=total_row, column=3, value="TOTALES").font = Font(bold=True)
+            sum_stock_cell = ws.cell(row=total_row, column=7)
+            sum_stock_cell.value = f"=SUM(G{data_start_row}:G{total_row-1})"
+            sum_stock_cell.font = Font(bold=True)
+            
+            sum_val_cell = ws.cell(row=total_row, column=14)
+            sum_val_cell.value = f"=SUM(N{data_start_row}:N{total_row-1})"
+            sum_val_cell.font = Font(bold=True)
+            sum_val_cell.number_format = '"$"#,##0.00'
+
+            for i in range(1, max_col + 1):
+                cell = ws.cell(row=total_row, column=i)
+                cell.border = border
+                cell.fill = PatternFill(start_color="ECFDF5", end_color="ECFDF5", fill_type="solid")
 
         buffer = BytesIO()
         wb.save(buffer)
