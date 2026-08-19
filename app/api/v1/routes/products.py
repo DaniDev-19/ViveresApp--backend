@@ -5,7 +5,7 @@ import openpyxl
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.api import deps
 from app.controllers.product_controller import ProductController
-from app.schemas.product import ProductResponse, ProductCreate, ProductUpdate, BulkPriceUpdate
+from app.schemas.product import ProductResponse, ProductCreate, ProductUpdate, BulkPriceUpdate, BulkWebSettingsUpdate
 from app.models.user import User, UserRole
 
 router = APIRouter()
@@ -20,6 +20,18 @@ async def bulk_price_update(
     Actualiza masivamente los precios (costo neto y precio final en cascada) por porcentaje.
     """
     return await ProductController.bulk_price_update(db, bulk_in=bulk_in, user_id=current_user.id)
+
+
+@router.post("/bulk-web-settings")
+async def bulk_web_settings_update(
+    bulk_in: BulkWebSettingsUpdate,
+    db: AsyncSession = Depends(deps.get_db),
+    current_user: User = Depends(deps.verify_roles([UserRole.ADMIN, UserRole.INVENTORY_MANAGER])),
+):
+    """
+    Actualiza masivamente la configuración web (Vista Web e IVA Web) por ámbito.
+    """
+    return await ProductController.bulk_web_settings_update(db, bulk_in=bulk_in, user_id=current_user.id)
 
 
 @router.post("/import/parse", dependencies=[Depends(deps.verify_roles([UserRole.ADMIN, UserRole.INVENTORY_MANAGER]))])

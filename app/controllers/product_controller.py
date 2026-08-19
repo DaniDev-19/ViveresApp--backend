@@ -225,4 +225,49 @@ class ProductController:
             "percentage": bulk_in.percentage,
             "scope": bulk_in.scope,
             "message": f"Se actualizaron {updated_count} productos exitosamente."
+        }
+
+    @staticmethod
+    async def bulk_web_settings_update(db: AsyncSession, bulk_in, user_id: int):
+        query = select(Product)
+        if bulk_in.scope == "category" and bulk_in.category_id is not None:
+            query = query.where(Product.category_id == bulk_in.category_id)
+        elif bulk_in.scope == "selective" and bulk_in.product_ids:
+            query = query.where(Product.id.in_(bulk_in.product_ids))
+        elif bulk_in.scope != "all":
+            return {"updated_count": 0, "message": "Ámbito de ajuste no válido"}
+
+        result = await db.execute(query)
+        products = result.scalars().all()
+
+        if not products:
+            return {"updated_count": 0, "message": "No se encontraron productos para actualizar"}
+
+        updated_count = 0
+        for product in products:
+            changed = False
+            if bulk_in.update_is_public:
+                product.is_public = bulk_in.is_public_value
+                changed = True
+            if bulk_in.update_apply_iva_web:
+                product.apply_iva_web = bulk_in.apply_iva_web_value
+                changed = True
+
+            if changed:
+                db.add(product)
+                updated_count += 1
+
+        await db.commit()
+
+        details = (
+            f"Ajuste masivo de configuración web en ámbito '{bulk_in.scope}'. "
+            f"Productos afectados: {updated_count}."
+        )
+        await AuditService.log_action(db, user_id, "BULK_UPDATE_WEB", "products", details)
+
+        return {
+            "success": True,
+            "updated_count": updated_count,
+            "scope": bulk_in.scope,
+            "message": f"Se actualizó la configuración web de {updated_count} productos exitosamente."
         }

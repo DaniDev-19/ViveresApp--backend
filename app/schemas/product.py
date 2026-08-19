@@ -77,6 +77,16 @@ class BulkPriceUpdate(BaseModel):
     update_offers: bool = True
 
 
+class BulkWebSettingsUpdate(BaseModel):
+    scope: str = Field("all", description="'all', 'category', o 'selective'")
+    category_id: Optional[int] = None
+    product_ids: Optional[List[int]] = None
+    update_is_public: bool = False
+    is_public_value: bool = True
+    update_apply_iva_web: bool = False
+    apply_iva_web_value: bool = True
+
+
 class ProductResponse(ProductBase):
     id: int
     price_usd: float
